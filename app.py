@@ -22,6 +22,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 import config
 import numpy as np
+import pandas as pd
 from model import train_model, predict_next_day, load_model, prepare_data
 from data_fetcher import fetch_spx_data
 from indicators import add_all_features, get_feature_columns
@@ -79,6 +80,22 @@ def api_predict():
         prev_high = float(raw_df["High"].iloc[-1])
         prev_low = float(raw_df["Low"].iloc[-1])
 
+        # Fetch live intraday price for current session
+        live_price = None
+        live_change = None
+        live_change_pct = None
+        prev_close = float(raw_df["Close"].iloc[-1])
+        try:
+            intra = yf.download("^GSPC", period="5d", interval="2m", progress=False)
+            if intra is not None and not intra.empty:
+                if isinstance(intra.columns, pd.MultiIndex):
+                    intra.columns = intra.columns.get_level_values(0)
+                live_price = round(float(intra["Close"].iloc[-1]), 2)
+                live_change = round(live_price - prev_close, 2)
+                live_change_pct = round((live_change / prev_close) * 100, 2)
+        except Exception as e:
+            print(f"[PREDICT] Live price fetch error: {e}")
+
         consec_up = int(f.get("consec_up", 0))
         consec_down = int(f.get("consec_down", 0))
         streak = f"{consec_up} up" if consec_up > 0 else f"{consec_down} down"
@@ -93,11 +110,20 @@ def api_predict():
         trend_sma20 = "ABOVE" if f.get("dist_sma_20", 0) > 0 else "BELOW"
         trend_sma200 = "ABOVE" if f.get("dist_sma_200", 0) > 0 else "BELOW"
 
+        # Determine prediction target date (next trading day after data_date)
+        data_date = prediction["date"]
+        prediction_for = datetime.now().strftime("%A, %B %d, %Y")
+
         return jsonify({
             "success": True,
-            "today": datetime.now().strftime("%A, %B %d, %Y"),
-            "data_date": prediction["date"].strftime("%A, %B %d, %Y"),
+            "today": prediction_for,
+            "data_date": data_date.strftime("%A, %B %d, %Y"),
+            "prediction_for": prediction_for,
             "close": round(prediction["close"], 2),
+            "prev_close": prev_close,
+            "live_price": live_price,
+            "live_change": live_change,
+            "live_change_pct": live_change_pct,
             "bull_prob": round(bull_prob * 100, 1),
             "bear_prob": round(prediction["bear_probability"] * 100, 1),
             "signal": signal_label(bull_prob),
@@ -184,7 +210,7 @@ def api_backtest():
 def api_train():
     try:
         model, scaler, feature_cols = train_model(force_refresh_data=True)
-        return jsonify({"success": True, "message": "Model retrained with fresh data."})
+        return jsonify({"success": True, "message": "Model retrained with latest market data."})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 

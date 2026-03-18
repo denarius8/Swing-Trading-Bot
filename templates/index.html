@@ -1314,9 +1314,14 @@ async function loadPrediction() {
 
         document.getElementById('signal-content').innerHTML = `
             <div class="signal-card">
-                <div class="signal-date">${data.today}</div>
-                <div style="font-size:11px; color:#484f58; margin-bottom:12px;">Based on last close: ${data.data_date}</div>
-                <div class="signal-close"><span>SPX</span> ${data.close.toLocaleString()}</div>
+                <div class="signal-date">${data.prediction_for || data.today}</div>
+                <div style="font-size:11px; color:#484f58; margin-bottom:4px;">Based on ${data.data_date} close: <strong>${data.close.toLocaleString()}</strong></div>
+                ${data.live_price ? `<div style="font-size:13px; margin-bottom:12px;">
+                    <span style="color:#8b949e;">Live SPX:</span>
+                    <strong style="color:${data.live_change >= 0 ? '#3fb950' : '#f85149'}">${data.live_price.toLocaleString()}</strong>
+                    <span style="color:${data.live_change >= 0 ? '#3fb950' : '#f85149'}; font-size:11px;">${data.live_change >= 0 ? '+' : ''}${data.live_change} (${data.live_change >= 0 ? '+' : ''}${data.live_change_pct}%)</span>
+                </div>` : `<div style="font-size:11px; color:#484f58; margin-bottom:12px;">Market closed</div>`}
+                <div class="signal-close"><span>Prev Close</span> ${data.close.toLocaleString()}</div>
                 <div class="signal-badge ${data.signal_class}">${data.signal}</div>
                 <div class="prob-container">
                     <div class="prob-label bear">BEAR</div>
