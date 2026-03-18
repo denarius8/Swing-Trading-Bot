@@ -80,12 +80,26 @@ def api_predict():
         prev_high = float(raw_df["High"].iloc[-1])
         prev_low = float(raw_df["Low"].iloc[-1])
 
-        # Fetch live intraday price for current session
+        # Always fetch fresh daily data to get the most recent close
+        prev_close = float(raw_df["Close"].iloc[-1])
+        prev_close_date = raw_df.index[-1]
         live_price = None
         live_change = None
         live_change_pct = None
-        prev_close = float(raw_df["Close"].iloc[-1])
         try:
+            fresh_daily = yf.download("^GSPC", period="5d", progress=False)
+            if fresh_daily is not None and not fresh_daily.empty:
+                if isinstance(fresh_daily.columns, pd.MultiIndex):
+                    fresh_daily.columns = fresh_daily.columns.get_level_values(0)
+                # Use the latest daily close as prev_close (compare dates without timezone)
+                latest_date = fresh_daily.index[-1]
+                cached_date_naive = prev_close_date.tz_localize(None) if prev_close_date.tzinfo else prev_close_date
+                latest_date_naive = latest_date.tz_localize(None) if latest_date.tzinfo else latest_date
+                if latest_date_naive >= cached_date_naive:
+                    prev_close = round(float(fresh_daily["Close"].iloc[-1]), 2)
+                    prev_close_date = latest_date
+
+            # Also fetch intraday for live price during market hours
             intra = yf.download("^GSPC", period="5d", interval="2m", progress=False)
             if intra is not None and not intra.empty:
                 if isinstance(intra.columns, pd.MultiIndex):
@@ -110,16 +124,17 @@ def api_predict():
         trend_sma20 = "ABOVE" if f.get("dist_sma_20", 0) > 0 else "BELOW"
         trend_sma200 = "ABOVE" if f.get("dist_sma_200", 0) > 0 else "BELOW"
 
-        # Determine prediction target date (next trading day after data_date)
+        # Determine prediction target date
         data_date = prediction["date"]
         prediction_for = datetime.now().strftime("%A, %B %d, %Y")
+        prev_close_label = prev_close_date.strftime("%A, %B %d, %Y")
 
         return jsonify({
             "success": True,
             "today": prediction_for,
-            "data_date": data_date.strftime("%A, %B %d, %Y"),
+            "data_date": prev_close_label,
             "prediction_for": prediction_for,
-            "close": round(prediction["close"], 2),
+            "close": prev_close,
             "prev_close": prev_close,
             "live_price": live_price,
             "live_change": live_change,
