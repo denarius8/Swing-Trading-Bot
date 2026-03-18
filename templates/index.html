@@ -1,0 +1,2908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="data:,">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPX Trading Bot</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+            background: #0a0e17;
+            color: #c9d1d9;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+            border-bottom: 1px solid #21262d;
+            padding: 20px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            color: #e6edf3;
+            font-weight: 600;
+        }
+
+        .header .subtitle {
+            font-size: 12px;
+            color: #7d8590;
+            margin-top: 4px;
+        }
+
+        .btn-group { display: flex; gap: 10px; }
+
+        .btn {
+            padding: 10px 20px;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            background: #21262d;
+            color: #c9d1d9;
+            font-family: inherit;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .btn:hover { background: #30363d; border-color: #8b949e; }
+
+        .btn.primary {
+            background: #1f6feb;
+            border-color: #1f6feb;
+            color: #fff;
+        }
+
+        .btn.primary:hover { background: #388bfd; }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Signal Card */
+        .signal-card {
+            background: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 12px;
+            padding: 32px;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .signal-date {
+            font-size: 14px;
+            color: #7d8590;
+            margin-bottom: 8px;
+        }
+
+        .signal-close {
+            font-size: 36px;
+            font-weight: 700;
+            color: #e6edf3;
+            margin-bottom: 24px;
+        }
+
+        .signal-close span { font-size: 16px; color: #7d8590; }
+
+        .signal-badge {
+            display: inline-block;
+            padding: 12px 32px;
+            border-radius: 8px;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+        }
+
+        .signal-badge.strong-bull { background: #0d4429; color: #3fb950; border: 1px solid #238636; }
+        .signal-badge.lean-bull { background: #0d3321; color: #56d364; border: 1px solid #2ea043; }
+        .signal-badge.neutral { background: #2d1f00; color: #d29922; border: 1px solid #9e6a03; }
+        .signal-badge.lean-bear { background: #3d1a1a; color: #f47067; border: 1px solid #da3633; }
+        .signal-badge.strong-bear { background: #4a1111; color: #ff7b72; border: 1px solid #f85149; }
+
+        .prob-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .prob-label {
+            font-size: 13px;
+            font-weight: 600;
+            width: 50px;
+            text-align: right;
+        }
+
+        .prob-label.bear { color: #f47067; }
+        .prob-label.bull { color: #3fb950; }
+
+        .prob-bar-track {
+            width: 300px;
+            height: 24px;
+            background: #21262d;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .prob-bar-fill {
+            height: 100%;
+            border-radius: 12px;
+            transition: width 0.8s ease;
+        }
+
+        .prob-bar-fill.bull-fill {
+            background: linear-gradient(90deg, #2ea043, #3fb950);
+        }
+
+        .prob-values {
+            display: flex;
+            justify-content: space-between;
+            width: 300px;
+            margin-top: 6px;
+            font-size: 12px;
+            color: #7d8590;
+        }
+
+        /* Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 768px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+
+        .card {
+            background: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .card-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #7d8590;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #21262d;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 13px;
+        }
+
+        .metric-label { color: #7d8590; }
+        .metric-value { color: #e6edf3; font-weight: 500; }
+        .metric-value.green { color: #3fb950; }
+        .metric-value.red { color: #f47067; }
+        .metric-value.yellow { color: #d29922; }
+
+        /* Backtest Table */
+        .backtest-card {
+            background: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 24px;
+        }
+
+        .backtest-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .backtest-accuracy {
+            font-size: 14px;
+            color: #e6edf3;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th {
+            text-align: left;
+            padding: 8px 12px;
+            color: #7d8590;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #21262d;
+        }
+
+        td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #21262d;
+        }
+
+        tr:last-child td { border-bottom: none; }
+
+        .hit { color: #3fb950; }
+        .miss { color: #f47067; }
+
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .tag.strong-bull { background: #0d4429; color: #3fb950; }
+        .tag.lean-bull { background: #0d3321; color: #56d364; }
+        .tag.neutral { background: #2d1f00; color: #d29922; }
+        .tag.lean-bear { background: #3d1a1a; color: #f47067; }
+        .tag.strong-bear { background: #4a1111; color: #ff7b72; }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #7d8590;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid #21262d;
+            border-top-color: #1f6feb;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 12px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .error-msg {
+            background: #4a1111;
+            border: 1px solid #f85149;
+            color: #ff7b72;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 16px 0;
+            font-size: 13px;
+        }
+
+        .disclaimer {
+            text-align: center;
+            color: #484f58;
+            font-size: 11px;
+            padding: 24px;
+            border-top: 1px solid #21262d;
+            margin-top: 32px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 24px;
+            border-bottom: 1px solid #21262d;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            color: #7d8590;
+            font-size: 14px;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            font-family: inherit;
+            background: none;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+        }
+
+        .tab:hover { color: #c9d1d9; }
+        .tab.active { color: #e6edf3; border-bottom-color: #1f6feb; }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .status-bar {
+            background: #0d1117;
+            border-top: 1px solid #21262d;
+            padding: 8px 32px;
+            font-size: 11px;
+            color: #484f58;
+            display: flex;
+            justify-content: space-between;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+        }
+
+        .gauge-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 6px 0;
+        }
+
+        .gauge-label {
+            color: #7d8590;
+            font-size: 13px;
+            width: 120px;
+        }
+
+        .gauge-track {
+            flex: 1;
+            height: 6px;
+            background: #21262d;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .gauge-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.6s ease;
+        }
+
+        .gauge-value {
+            width: 50px;
+            text-align: right;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        /* GEX Chart */
+        .gex-bar-chart {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 200px;
+            padding: 0 8px;
+            border-bottom: 1px solid #30363d;
+            margin-bottom: 8px;
+            position: relative;
+        }
+
+        .gex-bar-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100%;
+            justify-content: flex-end;
+            position: relative;
+        }
+
+        .gex-bar {
+            width: 80%;
+            min-width: 4px;
+            border-radius: 2px 2px 0 0;
+            transition: height 0.4s ease;
+        }
+
+        .gex-bar.positive { background: #238636; }
+        .gex-bar.negative {
+            background: #da3633;
+            border-radius: 0 0 2px 2px;
+            align-self: center;
+        }
+
+        .gex-bar-labels {
+            display: flex;
+            gap: 2px;
+            padding: 0 8px;
+            margin-bottom: 16px;
+        }
+
+        .gex-bar-label {
+            flex: 1;
+            text-align: center;
+            font-size: 9px;
+            color: #484f58;
+            overflow: hidden;
+        }
+
+        .gex-zero-line {
+            position: absolute;
+            left: 0;
+            right: 0;
+            border-top: 1px dashed #484f58;
+        }
+
+        .gex-spot-marker {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #d29922;
+            z-index: 2;
+        }
+
+        /* Confluence */
+        .confluence-signal {
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            padding: 12px 32px;
+            border-radius: 12px;
+            display: inline-block;
+            margin: 12px 0;
+        }
+
+        .confluence-signal.enter-long {
+            background: #0d4429;
+            color: #3fb950;
+            border: 2px solid #238636;
+            text-shadow: 0 0 20px rgba(63, 185, 80, 0.4);
+        }
+
+        .confluence-signal.enter-short {
+            background: #4a1111;
+            color: #ff7b72;
+            border: 2px solid #f85149;
+            text-shadow: 0 0 20px rgba(248, 81, 73, 0.4);
+        }
+
+        .confluence-signal.no-signal {
+            background: #1c1e23;
+            color: #7d8590;
+            border: 2px solid #30363d;
+        }
+
+        .confluence-score {
+            font-size: 48px;
+            font-weight: 800;
+            margin: 8px 0;
+        }
+
+        .confluence-meter {
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+            margin: 16px 0;
+        }
+
+        .confluence-dot {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .confluence-dot.long { background: #0d4429; color: #3fb950; border: 1px solid #238636; }
+        .confluence-dot.short { background: #4a1111; color: #ff7b72; border: 1px solid #f85149; }
+        .confluence-dot.neutral { background: #1c1e23; color: #7d8590; border: 1px solid #30363d; }
+
+        .indicator-row {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid #1c1e23;
+            gap: 12px;
+        }
+
+        .indicator-row:last-child { border-bottom: none; }
+
+        .indicator-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .indicator-icon.bull { background: #0d4429; color: #3fb950; }
+        .indicator-icon.bear { background: #4a1111; color: #ff7b72; }
+        .indicator-icon.neutral { background: #1c1e23; color: #7d8590; }
+
+        .indicator-info { flex: 1; }
+
+        .indicator-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: #e6edf3;
+        }
+
+        .indicator-detail {
+            font-size: 11px;
+            color: #7d8590;
+            margin-top: 2px;
+        }
+
+        .indicator-reason {
+            font-size: 11px;
+            color: #484f58;
+            font-style: italic;
+        }
+
+        .scan-ticker-row {
+            display: grid;
+            grid-template-columns: 80px 90px 70px 70px 130px 60px 60px 1fr;
+            align-items: center;
+            padding: 10px 16px;
+            border-bottom: 1px solid #1c1e23;
+            font-size: 12px;
+            gap: 8px;
+        }
+
+        .scan-ticker-row:hover { background: #161b22; }
+
+        .scan-ticker-row .symbol {
+            font-weight: 700;
+            color: #e6edf3;
+            font-size: 13px;
+        }
+
+        .scan-signal-badge {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .scan-signal-badge.enter-long { background: #0d4429; color: #3fb950; }
+        .scan-signal-badge.enter-short { background: #4a1111; color: #ff7b72; }
+        .scan-signal-badge.no-signal { background: #1c1e23; color: #484f58; }
+
+        .scan-strength-bar {
+            display: flex;
+            gap: 2px;
+        }
+
+        .scan-strength-pip {
+            width: 8px;
+            height: 14px;
+            border-radius: 2px;
+        }
+
+        .scan-detail-btn {
+            background: none;
+            border: 1px solid #30363d;
+            color: #7d8590;
+            padding: 3px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            font-family: inherit;
+        }
+
+        .scan-detail-btn:hover { background: #21262d; color: #e6edf3; }
+
+        .scan-detail-panel {
+            display: none;
+            grid-column: 1 / -1;
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 8px;
+        }
+
+        .scan-detail-panel.active { display: block; }
+
+        /* Exit Signals */
+        .exit-form {
+            background: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 12px;
+            padding: 24px;
+            margin-top: 24px;
+        }
+
+        .exit-form-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #e6edf3;
+            margin-bottom: 16px;
+        }
+
+        .exit-form-row {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .exit-form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .exit-form-group label {
+            font-size: 11px;
+            color: #7d8590;
+            text-transform: uppercase;
+        }
+
+        .exit-form-group input, .exit-form-group select {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #e6edf3;
+            padding: 8px 12px;
+            font-family: inherit;
+            font-size: 13px;
+        }
+
+        .exit-form-group input:focus, .exit-form-group select:focus {
+            outline: none;
+            border-color: #1f6feb;
+        }
+
+        .exit-btn {
+            padding: 8px 20px;
+            background: #da3633;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .exit-btn:hover { background: #f85149; }
+
+        .exit-signal-badge {
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            padding: 10px 28px;
+            border-radius: 12px;
+            display: inline-block;
+            margin: 12px 0;
+        }
+
+        .exit-signal-badge.exit-now {
+            background: #4a1111;
+            color: #ff7b72;
+            border: 2px solid #f85149;
+            animation: pulse-exit 1.5s infinite;
+        }
+
+        .exit-signal-badge.exit-position {
+            background: #3d1418;
+            color: #f47067;
+            border: 2px solid #da3633;
+        }
+
+        .exit-signal-badge.tighten-stop {
+            background: #2a2000;
+            color: #d29922;
+            border: 2px solid #d29922;
+        }
+
+        .exit-signal-badge.hold-position {
+            background: #0d4429;
+            color: #3fb950;
+            border: 2px solid #238636;
+        }
+
+        @keyframes pulse-exit {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.4); }
+            50% { box-shadow: 0 0 20px 4px rgba(248, 81, 73, 0.3); }
+        }
+
+        .exit-reason-row {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid #1c1e23;
+            gap: 12px;
+        }
+
+        .exit-reason-row:last-child { border-bottom: none; }
+
+        .exit-reason-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .exit-reason-icon.triggered { background: #4a1111; color: #ff7b72; }
+        .exit-reason-icon.safe { background: #0d4429; color: #3fb950; }
+        .exit-reason-icon.critical { background: #da3633; color: #fff; }
+
+        .urgency-tag {
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 3px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .urgency-tag.critical { background: #da3633; color: white; }
+        .urgency-tag.high { background: #4a1111; color: #ff7b72; }
+        .urgency-tag.medium { background: #2a2000; color: #d29922; }
+        .urgency-tag.low { background: #1c1e23; color: #7d8590; }
+
+        /* Live Ticker */
+        .ticker-bar {
+            background: #161b22;
+            border-bottom: 1px solid #21262d;
+            padding: 10px 32px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            font-size: 13px;
+            overflow-x: auto;
+        }
+
+        .ticker-price {
+            font-size: 22px;
+            font-weight: 700;
+            color: #e6edf3;
+            letter-spacing: -0.5px;
+        }
+
+        .ticker-change {
+            font-size: 15px;
+            font-weight: 600;
+            padding: 3px 10px;
+            border-radius: 6px;
+        }
+
+        .ticker-change.up { color: #3fb950; background: #0d4429; }
+        .ticker-change.down { color: #f47067; background: #3d1418; }
+        .ticker-change.flat { color: #d29922; background: #2a2000; }
+
+        .ticker-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .ticker-label {
+            font-size: 10px;
+            color: #484f58;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .ticker-value {
+            font-size: 13px;
+            color: #c9d1d9;
+            font-weight: 500;
+        }
+
+        .ticker-divider {
+            width: 1px;
+            height: 28px;
+            background: #21262d;
+        }
+
+        .ticker-range-bar {
+            width: 100px;
+            height: 6px;
+            background: #21262d;
+            border-radius: 3px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .ticker-range-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, #f47067, #d29922, #3fb950);
+        }
+
+        .ticker-range-dot {
+            position: absolute;
+            top: -3px;
+            width: 12px;
+            height: 12px;
+            background: #e6edf3;
+            border-radius: 50%;
+            border: 2px solid #0a0e17;
+            transform: translateX(-50%);
+        }
+
+        .ticker-update {
+            font-size: 10px;
+            color: #484f58;
+            margin-left: auto;
+            white-space: nowrap;
+        }
+
+        .ticker-live-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: #3fb950;
+            border-radius: 50%;
+            margin-right: 4px;
+            animation: pulse-dot 2s infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .gex-dealer-badge {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .gex-dealer-badge.long-gamma {
+            background: #0d4429;
+            color: #3fb950;
+            border: 1px solid #238636;
+        }
+
+        .gex-dealer-badge.short-gamma {
+            background: #4a1111;
+            color: #ff7b72;
+            border: 1px solid #f85149;
+        }
+
+        .gex-implication {
+            font-size: 12px;
+            color: #7d8590;
+            margin-top: 12px;
+            line-height: 1.6;
+            text-align: center;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .gex-level {
+            text-align: center;
+            padding: 12px;
+        }
+
+        .gex-level-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #e6edf3;
+        }
+
+        .gex-level-label {
+            font-size: 11px;
+            color: #7d8590;
+            margin-top: 4px;
+        }
+
+        .gex-source {
+            font-size: 10px;
+            color: #484f58;
+            text-align: center;
+            margin-top: 16px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div>
+        <h1>SPX TRADING BOT</h1>
+        <div class="subtitle">Predictive Research Tool - Not Financial Advice</div>
+    </div>
+    <div class="btn-group">
+        <button class="btn primary" onclick="loadConfluence()">Confluence</button>
+        <button class="btn" onclick="loadOptions()">SPX Options</button>
+        <button class="btn" onclick="loadPortfolio()">Portfolio</button>
+        <button class="btn" onclick="loadScan()">Scan Tickers</button>
+        <button class="btn" onclick="loadGex()">GEX</button>
+        <button class="btn" onclick="retrainModel()" id="trainBtn">Retrain</button>
+    </div>
+</div>
+
+<div class="ticker-bar" id="ticker-bar">
+    <div style="color:#484f58; font-size:12px;">Loading live price...</div>
+</div>
+
+<div class="container">
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('confluence')">Confluence</button>
+        <button class="tab" onclick="switchTab('options')">SPX Options</button>
+        <button class="tab" onclick="switchTab('portfolio')">Portfolio</button>
+        <button class="tab" onclick="switchTab('scanner')">Scanner</button>
+        <button class="tab" onclick="switchTab('signal')">ML Signal</button>
+        <button class="tab" onclick="switchTab('gex')">GEX</button>
+        <button class="tab" onclick="switchTab('backtest')">Backtest</button>
+    </div>
+
+    <div id="confluence-tab" class="tab-content active">
+        <div id="confluence-loading" class="loading">
+            <div class="spinner"></div>
+            <div>Click "Confluence" to check swing trade signals</div>
+        </div>
+        <div id="confluence-content" style="display:none;"></div>
+        <div id="confluence-error" style="display:none;"></div>
+
+        <div class="exit-form">
+            <div class="exit-form-title">Exit Signal Check — Do you have an open position?</div>
+            <div class="exit-form-row">
+                <div class="exit-form-group">
+                    <label>Ticker</label>
+                    <input type="text" id="exit-symbol" value="SPX" placeholder="SPX, AAPL, etc." style="width:90px;">
+                </div>
+                <div class="exit-form-group">
+                    <label>Position</label>
+                    <select id="exit-type">
+                        <option value="long">Long (Calls)</option>
+                        <option value="short">Short (Puts)</option>
+                    </select>
+                </div>
+                <div class="exit-form-group">
+                    <label>Entry Price</label>
+                    <input type="number" id="exit-entry" placeholder="e.g. 5720" step="0.01" style="width:120px;">
+                </div>
+                <button class="exit-btn" onclick="checkExit()">Check Exit Signal</button>
+            </div>
+        </div>
+        <div id="exit-content" style="display:none; margin-top:24px;"></div>
+        <div id="exit-error" style="display:none;"></div>
+    </div>
+
+    <div id="options-tab" class="tab-content">
+        <div class="exit-form" style="margin-top:0; margin-bottom:16px;">
+            <div class="exit-form-title">SPX Contract Analyzer — Run Probabilities on a Trade</div>
+            <div style="font-size:11px; color:#7d8590; margin-bottom:10px;">Enter your SPX option contract details to see probability of profit, P&L scenarios, and theta decay.</div>
+            <div class="exit-form-row">
+                <div class="exit-form-group">
+                    <label>Strike</label>
+                    <input type="number" id="contract-strike" placeholder="5700" step="5" style="width:100px;">
+                </div>
+                <div class="exit-form-group">
+                    <label>Expiration</label>
+                    <input type="date" id="contract-exp" style="width:145px;">
+                </div>
+                <div class="exit-form-group">
+                    <label>Type</label>
+                    <select id="contract-type">
+                        <option value="call">Call</option>
+                        <option value="put">Put</option>
+                    </select>
+                </div>
+                <div class="exit-form-group">
+                    <label>Entry Premium $</label>
+                    <input type="number" id="contract-premium" placeholder="18.80" step="0.01" style="width:100px;">
+                </div>
+                <div class="exit-form-group">
+                    <label>Current Price $</label>
+                    <input type="number" id="contract-current-price" placeholder="21.50" step="0.01" style="width:100px;">
+                </div>
+                <div class="exit-form-group">
+                    <label>Contracts</label>
+                    <input type="number" id="contract-qty" placeholder="1" value="1" step="1" style="width:70px;">
+                </div>
+                <div class="exit-form-group">
+                    <label>Target Exit $</label>
+                    <input type="number" id="contract-target" placeholder="25.00" step="0.01" style="width:100px;">
+                </div>
+                <button class="btn primary" onclick="analyzeContract()" style="height:37px;">Analyze</button>
+            </div>
+        </div>
+        <div id="contract-result" style="display:none;"></div>
+
+        <div id="options-loading" class="loading">
+            <div class="spinner"></div>
+            <div>Click "SPX Options" to load options analysis</div>
+        </div>
+        <div id="options-content" style="display:none;"></div>
+        <div id="options-error" style="display:none;"></div>
+    </div>
+
+    <div id="portfolio-tab" class="tab-content">
+        <div class="exit-form" style="margin-top:0; margin-bottom:16px;">
+            <div class="exit-form-title">Add Position</div>
+            <div class="exit-form-row">
+                <div class="exit-form-group">
+                    <label>Ticker</label>
+                    <input type="text" id="port-symbol" placeholder="PEP" style="width:80px;">
+                </div>
+                <div class="exit-form-group">
+                    <label>Type</label>
+                    <select id="port-type">
+                        <option value="long">Long</option>
+                        <option value="short">Short</option>
+                    </select>
+                </div>
+                <div class="exit-form-group">
+                    <label>Entry $</label>
+                    <input type="number" id="port-entry" placeholder="147.97" step="0.01" style="width:100px;">
+                </div>
+                <div class="exit-form-group">
+                    <label>Shares</label>
+                    <input type="number" id="port-shares" placeholder="300" step="1" style="width:80px;">
+                </div>
+                <div class="exit-form-group">
+                    <label>Target Low</label>
+                    <input type="number" id="port-target-low" placeholder="183" step="0.01" style="width:90px;">
+                </div>
+                <div class="exit-form-group">
+                    <label>Target High</label>
+                    <input type="number" id="port-target-high" placeholder="197" step="0.01" style="width:90px;">
+                </div>
+                <div class="exit-form-group">
+                    <label>Stop $</label>
+                    <input type="number" id="port-stop" placeholder="140" step="0.01" style="width:90px;">
+                </div>
+                <button class="btn primary" onclick="addPosition()" style="height:37px;">Add</button>
+            </div>
+            <div class="exit-form-row" style="margin-top:12px;">
+                <div class="exit-form-group">
+                    <label>Notes</label>
+                    <input type="text" id="port-notes" placeholder="e.g. long-term swing, targeting $183-197" style="width:400px;">
+                </div>
+                <div class="exit-form-group">
+                    <label>Account Size</label>
+                    <input type="number" id="port-account" placeholder="10000" step="100" style="width:120px;" value="10000">
+                </div>
+                <button class="btn" onclick="updateAccount()" style="height:37px;">Set Account</button>
+                <button class="btn" onclick="loadPortfolio()" style="height:37px;">Refresh</button>
+            </div>
+        </div>
+
+        <div class="exit-form" style="margin-bottom:16px;">
+            <div class="exit-form-title">Position Size Calculator</div>
+            <div style="font-size:11px; color:#7d8590; margin-bottom:14px; line-height:1.7;">
+                <strong style="color:#e6edf3;">What this does:</strong> Tells you exactly how many shares to buy so that if your stop loss gets hit,
+                you only lose a fixed % of your account — never more. This is the #1 rule professional traders use to survive losing streaks.
+            </div>
+            <div class="exit-form-row">
+                <div class="exit-form-group">
+                    <label>Account $</label>
+                    <input type="number" id="rc-account" placeholder="10000" step="100" style="width:110px;" value="10000">
+                    <div style="font-size:9px; color:#484f58; margin-top:2px;">Your total trading capital</div>
+                </div>
+                <div class="exit-form-group">
+                    <label>Entry $</label>
+                    <input type="number" id="rc-entry" placeholder="5700" step="0.01" style="width:100px;">
+                    <div style="font-size:9px; color:#484f58; margin-top:2px;">Price you plan to buy at</div>
+                </div>
+                <div class="exit-form-group">
+                    <label>Stop $</label>
+                    <input type="number" id="rc-stop" placeholder="5650" step="0.01" style="width:100px;">
+                    <div style="font-size:9px; color:#484f58; margin-top:2px;">Price you'll exit if wrong</div>
+                </div>
+                <div class="exit-form-group">
+                    <label>Risk %</label>
+                    <select id="rc-risk">
+                        <option value="1">1% (Conservative)</option>
+                        <option value="2" selected>2% (Standard)</option>
+                        <option value="3">3% (Aggressive)</option>
+                        <option value="5">5% (High Risk)</option>
+                    </select>
+                    <div style="font-size:9px; color:#484f58; margin-top:2px;">Max % of account to lose</div>
+                </div>
+                <button class="btn primary" onclick="calcRisk()" style="height:37px;">Calculate</button>
+            </div>
+            <div id="risk-calc-result" style="display:none; margin-top:12px;"></div>
+            <div style="margin-top:16px; padding:14px; background:#0d1117; border-radius:8px; border:1px solid #21262d;">
+                <div style="font-size:12px; color:#e6edf3; font-weight:600; margin-bottom:8px;">How to use this:</div>
+                <div style="font-size:11px; color:#7d8590; line-height:1.8;">
+                    <strong style="color:#d29922;">1.</strong> <strong style="color:#c9d1d9;">Account $</strong> — Enter your total available trading capital (e.g. $10,000)<br>
+                    <strong style="color:#d29922;">2.</strong> <strong style="color:#c9d1d9;">Entry $</strong> — The price you plan to enter the trade at. Use the current price or your limit order price<br>
+                    <strong style="color:#d29922;">3.</strong> <strong style="color:#c9d1d9;">Stop $</strong> — Your invalidation level. Where the trade thesis is wrong. For longs: below entry. For shorts: above entry.
+                    Use a key support/resistance level, or the ATR-based stop from the SPX Options tab<br>
+                    <strong style="color:#d29922;">4.</strong> <strong style="color:#c9d1d9;">Risk %</strong> — The maximum percentage of your account you're willing to lose on this single trade:<br>
+                    <span style="margin-left:16px;"><strong style="color:#3fb950;">1%</strong> = Conservative — survive 100 consecutive losses. Best for learning or small accounts</span><br>
+                    <span style="margin-left:16px;"><strong style="color:#d29922;">2%</strong> = Standard — the most common professional rule. Survive 50 consecutive losses</span><br>
+                    <span style="margin-left:16px;"><strong style="color:#ff7b72;">3-5%</strong> = Aggressive — only for high-conviction trades. A 10-trade losing streak costs 30-50% of account</span><br><br>
+                    <strong style="color:#e6edf3;">Example:</strong> $10K account, entering PEP at $150 with a $140 stop at 2% risk →<br>
+                    <span style="margin-left:16px;">Risk amount = $10,000 × 2% = <strong style="color:#e6edf3;">$200</strong></span><br>
+                    <span style="margin-left:16px;">Risk per share = $150 − $140 = <strong style="color:#e6edf3;">$10</strong></span><br>
+                    <span style="margin-left:16px;">Shares to buy = $200 ÷ $10 = <strong style="color:#e6edf3;">20 shares</strong> ($3,000 position)</span><br>
+                    <span style="margin-left:16px;">If PEP hits $140 stop → you lose exactly $200 (2%). Account survives.</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="portfolio-loading" class="loading">
+            <div class="spinner"></div>
+            <div>Click "Refresh" or add a position to view your portfolio</div>
+        </div>
+        <div id="portfolio-content" style="display:none;"></div>
+        <div id="portfolio-error" style="display:none;"></div>
+    </div>
+
+    <div id="scanner-tab" class="tab-content">
+        <div class="exit-form" style="margin-top:0; margin-bottom:16px;">
+            <div class="exit-form-title">Custom Watchlist</div>
+            <div style="font-size:11px; color:#7d8590; margin-bottom:10px;">Add tickers separated by commas. Leave blank to scan the default 38 tickers.</div>
+            <div class="exit-form-row">
+                <div class="exit-form-group" style="flex:1;">
+                    <label>Tickers</label>
+                    <input type="text" id="custom-tickers" placeholder="e.g. AAPL, TSLA, NVDA, COIN, PLTR" style="width:100%;">
+                </div>
+                <button class="btn primary" onclick="loadScan()" style="height:37px;">Scan</button>
+                <button class="btn" onclick="document.getElementById('custom-tickers').value=''; loadScan();" style="height:37px;">Default List</button>
+            </div>
+        </div>
+        <div id="scanner-loading" class="loading">
+            <div class="spinner"></div>
+            <div>Click "Scan Tickers" to find trade setups</div>
+        </div>
+        <div id="scanner-content" style="display:none;"></div>
+        <div id="scanner-error" style="display:none;"></div>
+    </div>
+
+    <div id="signal-tab" class="tab-content">
+        <div id="signal-loading" class="loading">
+            <div class="spinner"></div>
+            <div>Click "Get Signal" to load today's prediction</div>
+        </div>
+        <div id="signal-content" style="display:none;"></div>
+        <div id="signal-error" style="display:none;"></div>
+    </div>
+
+    <div id="gex-tab" class="tab-content">
+        <div id="gex-loading" class="loading">
+            <div class="spinner"></div>
+            <div>Click "Check GEX" to load gamma exposure data</div>
+        </div>
+        <div id="gex-content" style="display:none;"></div>
+        <div id="gex-error" style="display:none;"></div>
+    </div>
+
+    <div id="backtest-tab" class="tab-content">
+        <div id="backtest-loading" class="loading">
+            <div class="spinner"></div>
+            <div>Click "Backtest" to load results</div>
+        </div>
+        <div id="backtest-content" style="display:none;"></div>
+        <div id="backtest-error" style="display:none;"></div>
+    </div>
+
+    <div class="disclaimer">
+        This tool is for research purposes only. Past model performance does not predict future results.
+        Do not use as your sole basis for trading decisions.
+    </div>
+</div>
+
+<div class="status-bar">
+    <span id="status-text">Ready</span>
+    <span id="status-time"></span>
+</div>
+
+<script>
+let tickerInterval = null;
+
+async function loadTicker() {
+    try {
+        const res = await fetch('/api/live');
+        const d = await res.json();
+        if (!d.success) return;
+
+        const changeClass = d.change > 0 ? 'up' : d.change < 0 ? 'down' : 'flat';
+        const changeSign = d.change >= 0 ? '+' : '';
+        const vol = d.volume >= 1e9 ? (d.volume / 1e9).toFixed(2) + 'B' :
+                    d.volume >= 1e6 ? (d.volume / 1e6).toFixed(1) + 'M' :
+                    d.volume >= 1e3 ? (d.volume / 1e3).toFixed(0) + 'K' : d.volume;
+
+        document.getElementById('ticker-bar').innerHTML = `
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span style="color:#7d8590; font-size:13px; font-weight:600;">SPX</span>
+                <span class="ticker-price">${d.price.toLocaleString()}</span>
+            </div>
+            <span class="ticker-change ${changeClass}">${changeSign}${d.change.toFixed(2)} (${changeSign}${d.change_pct}%)</span>
+            <div class="ticker-divider"></div>
+            <div class="ticker-item">
+                <span class="ticker-label">Prev Close</span>
+                <span class="ticker-value">${d.prev_close.toLocaleString()}</span>
+            </div>
+            <div class="ticker-item">
+                <span class="ticker-label">Open</span>
+                <span class="ticker-value">${d.open.toLocaleString()}</span>
+            </div>
+            <div class="ticker-divider"></div>
+            <div class="ticker-item">
+                <span class="ticker-label">Day Low</span>
+                <span class="ticker-value" style="color:#f47067;">${d.low.toLocaleString()}</span>
+            </div>
+            <div class="ticker-item">
+                <span class="ticker-label">Day Range</span>
+                <div class="ticker-range-bar">
+                    <div class="ticker-range-fill" style="width:100%;"></div>
+                    <div class="ticker-range-dot" style="left:${d.day_range_pct}%;"></div>
+                </div>
+            </div>
+            <div class="ticker-item">
+                <span class="ticker-label">Day High</span>
+                <span class="ticker-value" style="color:#3fb950;">${d.high.toLocaleString()}</span>
+            </div>
+            <div class="ticker-divider"></div>
+            <div class="ticker-item">
+                <span class="ticker-label">Volume</span>
+                <span class="ticker-value">${vol}</span>
+            </div>
+            <div class="ticker-update"><span class="ticker-live-dot"></span>Updated ${d.timestamp}</div>
+        `;
+    } catch (err) {
+        // Silently fail, will retry
+    }
+}
+
+// Load ticker on page load and refresh every 30 seconds
+loadTicker();
+tickerInterval = setInterval(loadTicker, 30000);
+
+function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+
+    const tabMap = { confluence: 0, options: 1, portfolio: 2, scanner: 3, signal: 4, gex: 5, backtest: 6 };
+    document.querySelectorAll('.tab')[tabMap[tab]].classList.add('active');
+    document.getElementById(tab + '-tab').classList.add('active');
+}
+
+function setStatus(msg) {
+    document.getElementById('status-text').textContent = msg;
+    document.getElementById('status-time').textContent = new Date().toLocaleTimeString();
+}
+
+function gaugeColor(value, invert) {
+    if (invert) value = 100 - value;
+    if (value > 70) return '#3fb950';
+    if (value > 30) return '#d29922';
+    return '#f47067';
+}
+
+function rsiColor(v) {
+    if (v > 70) return 'red';
+    if (v < 30) return 'green';
+    return '';
+}
+
+async function loadPrediction() {
+    switchTab('signal');
+    document.getElementById('signal-loading').style.display = 'block';
+    document.getElementById('signal-loading').innerHTML = '<div class="spinner"></div><div>Loading prediction...</div>';
+    document.getElementById('signal-content').style.display = 'none';
+    document.getElementById('signal-error').style.display = 'none';
+    setStatus('Fetching prediction...');
+
+    try {
+        const res = await fetch('/api/predict');
+        const data = await res.json();
+
+        if (!data.success) throw new Error(data.error);
+
+        const c = data.context;
+        const l = data.levels;
+
+        document.getElementById('signal-content').innerHTML = `
+            <div class="signal-card">
+                <div class="signal-date">${data.today}</div>
+                <div style="font-size:11px; color:#484f58; margin-bottom:12px;">Based on last close: ${data.data_date}</div>
+                <div class="signal-close"><span>SPX</span> ${data.close.toLocaleString()}</div>
+                <div class="signal-badge ${data.signal_class}">${data.signal}</div>
+                <div class="prob-container">
+                    <div class="prob-label bear">BEAR</div>
+                    <div>
+                        <div class="prob-bar-track">
+                            <div class="prob-bar-fill bull-fill" style="width: ${data.bull_prob}%"></div>
+                        </div>
+                        <div class="prob-values" style="margin: 6px auto 0; display:flex; justify-content:space-between;">
+                            <span>${data.bear_prob}%</span>
+                            <span>${data.bull_prob}%</span>
+                        </div>
+                    </div>
+                    <div class="prob-label bull">BULL</div>
+                </div>
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">Trend</div>
+                    <div class="metric">
+                        <span class="metric-label">Price vs SMA(20)</span>
+                        <span class="metric-value ${c.sma20.dir === 'ABOVE' ? 'green' : 'red'}">${c.sma20.dir} (${c.sma20.dist})</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Price vs SMA(200)</span>
+                        <span class="metric-value ${c.sma200.dir === 'ABOVE' ? 'green' : 'red'}">${c.sma200.dir} (${c.sma200.dist})</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Golden Cross (50/200)</span>
+                        <span class="metric-value ${c.golden_cross === 'YES' ? 'green' : 'red'}">${c.golden_cross}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">ADX</span>
+                        <span class="metric-value">${c.adx}</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Momentum</div>
+                    <div class="gauge-row">
+                        <span class="gauge-label">RSI(14)</span>
+                        <div class="gauge-track">
+                            <div class="gauge-fill" style="width:${c.rsi}%; background:${gaugeColor(c.rsi, true)}"></div>
+                        </div>
+                        <span class="gauge-value ${rsiColor(c.rsi)}">${c.rsi}</span>
+                    </div>
+                    <div class="gauge-row">
+                        <span class="gauge-label">Stochastic %K</span>
+                        <div class="gauge-track">
+                            <div class="gauge-fill" style="width:${c.stoch_k}%; background:${gaugeColor(c.stoch_k, true)}"></div>
+                        </div>
+                        <span class="gauge-value">${c.stoch_k}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">MACD Histogram</span>
+                        <span class="metric-value ${c.macd_hist > 0 ? 'green' : 'red'}">${c.macd_hist} (${c.macd_dir})</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Williams %R</span>
+                        <span class="metric-value">${c.williams_r}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">CCI</span>
+                        <span class="metric-value">${c.cci}</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Volatility</div>
+                    <div class="metric">
+                        <span class="metric-label">Bollinger Band</span>
+                        <span class="metric-value">${c.bb_pct} (${c.bb_label})</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">ATR (%)</span>
+                        <span class="metric-value">${c.atr_pct}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Historical Vol (20d)</span>
+                        <span class="metric-value">${c.hvol_20}</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Recent Action</div>
+                    <div class="metric">
+                        <span class="metric-label">1-Day Return</span>
+                        <span class="metric-value ${parseFloat(c.ret_1d) >= 0 ? 'green' : 'red'}">${c.ret_1d}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">5-Day Return</span>
+                        <span class="metric-value ${parseFloat(c.ret_5d) >= 0 ? 'green' : 'red'}">${c.ret_5d}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Last Gap</span>
+                        <span class="metric-value">${c.gap}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Streak</span>
+                        <span class="metric-value">${c.streak}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Volume vs 20d Avg</span>
+                        <span class="metric-value">${c.vol_ratio}x (${c.vol_label})</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Key Levels</div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; text-align:center;">
+                    <div>
+                        <div style="color:#7d8590; font-size:11px; margin-bottom:4px;">20-Day High</div>
+                        <div style="color:#3fb950; font-size:18px; font-weight:600;">${l.high_20.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="color:#7d8590; font-size:11px; margin-bottom:4px;">Prior Day High</div>
+                        <div style="color:#e6edf3; font-size:18px; font-weight:600;">${l.prev_high.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="color:#7d8590; font-size:11px; margin-bottom:4px;">Prior Day Low</div>
+                        <div style="color:#e6edf3; font-size:18px; font-weight:600;">${l.prev_low.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="color:#7d8590; font-size:11px; margin-bottom:4px;">20-Day Low</div>
+                        <div style="color:#f47067; font-size:18px; font-weight:600;">${l.low_20.toLocaleString()}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('signal-loading').style.display = 'none';
+        document.getElementById('signal-content').style.display = 'block';
+        setStatus('Prediction loaded');
+    } catch (err) {
+        document.getElementById('signal-loading').style.display = 'none';
+        document.getElementById('signal-error').style.display = 'block';
+        document.getElementById('signal-error').innerHTML = `<div class="error-msg">Error: ${err.message}</div>`;
+        setStatus('Error loading prediction');
+    }
+}
+
+async function loadBacktest() {
+    switchTab('backtest');
+    document.getElementById('backtest-loading').style.display = 'block';
+    document.getElementById('backtest-loading').innerHTML = '<div class="spinner"></div><div>Loading backtest...</div>';
+    document.getElementById('backtest-content').style.display = 'none';
+    document.getElementById('backtest-error').style.display = 'none';
+    setStatus('Loading backtest...');
+
+    try {
+        const res = await fetch('/api/backtest');
+        const data = await res.json();
+
+        if (!data.success) throw new Error(data.error);
+
+        let tableRows = data.rows.map(r => `
+            <tr>
+                <td>${r.date}</td>
+                <td>${r.close.toLocaleString()}</td>
+                <td>${r.prob}%</td>
+                <td><span class="tag ${r.signal_class}">${r.signal}</span></td>
+                <td>${r.actual}</td>
+                <td class="${r.hit ? 'hit' : 'miss'}">${r.hit ? 'HIT' : 'MISS'}</td>
+            </tr>
+        `).join('');
+
+        document.getElementById('backtest-content').innerHTML = `
+            <div class="backtest-card">
+                <div class="backtest-header">
+                    <div class="card-title" style="margin:0; border:none; padding:0;">Last 30 Trading Days</div>
+                    <div class="backtest-accuracy">
+                        Accuracy: <strong>${data.correct}/${data.total} (${data.accuracy}%)</strong>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Close</th>
+                            <th>Bull %</th>
+                            <th>Signal</th>
+                            <th>Actual</th>
+                            <th>Result</th>
+                        </tr>
+                    </thead>
+                    <tbody>${tableRows}</tbody>
+                </table>
+            </div>
+        `;
+
+        document.getElementById('backtest-loading').style.display = 'none';
+        document.getElementById('backtest-content').style.display = 'block';
+        setStatus(`Backtest loaded - ${data.accuracy}% accuracy`);
+    } catch (err) {
+        document.getElementById('backtest-loading').style.display = 'none';
+        document.getElementById('backtest-error').style.display = 'block';
+        document.getElementById('backtest-error').innerHTML = `<div class="error-msg">Error: ${err.message}</div>`;
+        setStatus('Error loading backtest');
+    }
+}
+
+function formatGexNum(n) {
+    const abs = Math.abs(n);
+    if (abs >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+    if (abs >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (abs >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return n.toFixed(0);
+}
+
+async function loadGex() {
+    switchTab('gex');
+    document.getElementById('gex-loading').style.display = 'block';
+    document.getElementById('gex-loading').innerHTML = '<div class="spinner"></div><div>Fetching options data & calculating GEX...</div>';
+    document.getElementById('gex-content').style.display = 'none';
+    document.getElementById('gex-error').style.display = 'none';
+    setStatus('Calculating gamma exposure...');
+
+    try {
+        const res = await fetch('/api/gex');
+        const data = await res.json();
+
+        if (!data.success) throw new Error(data.error);
+
+        const dealerClass = data.dealer_position === 'LONG GAMMA' ? 'long-gamma' : 'short-gamma';
+
+        // Build bar chart
+        const maxGex = Math.max(...data.chart_net_gex.map(v => Math.abs(v)), 1);
+        let barsHtml = '';
+        let labelsHtml = '';
+        const spotIdx = data.chart_strikes.findIndex(s => s >= data.spot);
+
+        data.chart_net_gex.forEach((gex, i) => {
+            const pct = Math.abs(gex) / maxGex * 100;
+            const isPos = gex >= 0;
+            const isSpot = i === spotIdx;
+            barsHtml += `
+                <div class="gex-bar-group" title="Strike: ${data.chart_strikes[i]}&#10;Net GEX: ${formatGexNum(gex)}">
+                    ${isSpot ? '<div class="gex-spot-marker"></div>' : ''}
+                    <div class="gex-bar ${isPos ? 'positive' : 'negative'}" style="height:${pct}%"></div>
+                </div>`;
+            const strike = data.chart_strikes[i];
+            // Show every Nth label to avoid crowding
+            const showLabel = i % Math.max(1, Math.floor(data.chart_strikes.length / 15)) === 0;
+            labelsHtml += `<div class="gex-bar-label">${showLabel ? strike : ''}</div>`;
+        });
+
+        // Top gamma strikes tables
+        let callRows = data.top_call_gamma.map(s =>
+            `<tr><td>${s.strike.toLocaleString()}</td><td class="green">${formatGexNum(s.gex)}</td></tr>`
+        ).join('');
+        let putRows = data.top_put_gamma.map(s =>
+            `<tr><td>${s.strike.toLocaleString()}</td><td class="red">${formatGexNum(s.gex)}</td></tr>`
+        ).join('');
+
+        // Per-expiry rows (built separately to avoid nested template literal issues)
+        let expiryRows = '';
+        data.per_expiry.forEach(function(e) {
+            const rowStyle = e.is_monthly ? 'background:#1a1520;' : '';
+            const dealerColor = e.dealer_position === 'LONG GAMMA' ? 'green' : 'red';
+            const typeTag = e.is_monthly ? '<span class="tag neutral">OPEX</span>' : 'Weekly';
+            const netColor = e.net_gex >= 0 ? 'green' : 'red';
+            const topStrike = e.top_strike ? e.top_strike.toLocaleString() : '-';
+            expiryRows += '<tr style="' + rowStyle + '">'
+                + '<td>' + e.date + '</td>'
+                + '<td>' + e.dte + '</td>'
+                + '<td>' + typeTag + '</td>'
+                + '<td class="green">' + formatGexNum(e.call_gex) + '</td>'
+                + '<td class="red">' + formatGexNum(e.put_gex) + '</td>'
+                + '<td class="' + netColor + '">' + formatGexNum(e.net_gex) + '</td>'
+                + '<td class="' + dealerColor + '">' + e.dealer_position + '</td>'
+                + '<td>' + topStrike + '</td>'
+                + '</tr>';
+        });
+
+        document.getElementById('gex-content').innerHTML = `
+            <div class="signal-card">
+                <div class="signal-date">Gamma Exposure Analysis</div>
+                <div style="font-size:11px; color:#484f58; margin-bottom:16px;">${data.timestamp} | Source: ${data.data_source} | ${data.expirations_used} expirations</div>
+                <div class="signal-close"><span>SPX</span> ${data.spot.toLocaleString()}</div>
+                <div class="gex-dealer-badge ${dealerClass}">${data.dealer_position}</div>
+                <div class="gex-implication">${data.dealer_implication}</div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px; margin-bottom:24px;">
+                <div class="card" style="text-align:center;">
+                    <div class="gex-level-label">GEX FLIP LEVEL</div>
+                    <div class="gex-level-value" style="color:#d29922;">${data.gex_flip ? data.gex_flip.toLocaleString() : 'N/A'}</div>
+                    <div class="gex-level-label">Price where dealers switch positioning</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div class="gex-level-label">GAMMA SUPPORT</div>
+                    <div class="gex-level-value" style="color:#3fb950;">${data.gamma_support ? data.gamma_support.toLocaleString() : 'N/A'}</div>
+                    <div class="gex-level-label">Highest gamma strike below spot</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div class="gex-level-label">GAMMA RESISTANCE</div>
+                    <div class="gex-level-value" style="color:#f47067;">${data.gamma_resistance ? data.gamma_resistance.toLocaleString() : 'N/A'}</div>
+                    <div class="gex-level-label">Highest gamma strike above spot</div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-bottom:24px;">
+                <div class="card-title">Net GEX by Strike <span style="color:#d29922; font-weight:400;">(yellow line = spot)</span></div>
+                <div class="gex-bar-chart">${barsHtml}</div>
+                <div class="gex-bar-labels">${labelsHtml}</div>
+            </div>
+
+            <div class="card" style="margin-bottom:24px;">
+                <div class="card-title">GEX by Expiration Date</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Expiration</th>
+                            <th>DTE</th>
+                            <th>Type</th>
+                            <th>Call GEX</th>
+                            <th>Put GEX</th>
+                            <th>Net GEX</th>
+                            <th>Dealer</th>
+                            <th>Top Strike</th>
+                        </tr>
+                    </thead>
+                    <tbody>${expiryRows}</tbody>
+                </table>
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">Top Call Gamma Strikes (Resistance)</div>
+                    <table>
+                        <thead><tr><th>Strike</th><th>GEX</th></tr></thead>
+                        <tbody>${callRows}</tbody>
+                    </table>
+                </div>
+                <div class="card">
+                    <div class="card-title">Top Put Gamma Strikes (Support)</div>
+                    <table>
+                        <thead><tr><th>Strike</th><th>GEX</th></tr></thead>
+                        <tbody>${putRows}</tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">How to Read GEX</div>
+                <div class="metric"><span class="metric-label">Total Net GEX</span><span class="metric-value">${formatGexNum(data.total_gex)}</span></div>
+                <div style="font-size:12px; color:#7d8590; margin-top:12px; line-height:1.8;">
+                    <strong style="color:#3fb950;">Dealers LONG gamma (positive GEX):</strong> They sell into rallies and buy dips. Market tends to be pinned, lower volatility, mean-reverting.<br>
+                    <strong style="color:#f47067;">Dealers SHORT gamma (negative GEX):</strong> They buy rallies and sell dips (amplifying moves). Market trends harder, higher volatility, breakout-prone.<br>
+                    <strong style="color:#d29922;">GEX Flip Level:</strong> The strike where dealer positioning flips. Above it = long gamma environment. Below it = short gamma. Acts as a magnet.<br>
+                    <strong>Gamma Support/Resistance:</strong> Strikes with highest absolute gamma act as magnets and walls. Price tends to gravitate toward high-gamma strikes.
+                </div>
+            </div>
+
+            <div class="gex-source">
+                Data is delayed ~15-20 min via Yahoo Finance. This is an estimate, not institutional-grade GEX.
+            </div>
+        `;
+
+        document.getElementById('gex-loading').style.display = 'none';
+        document.getElementById('gex-content').style.display = 'block';
+        setStatus(`GEX loaded - Dealers ${data.dealer_position}`);
+    } catch (err) {
+        document.getElementById('gex-loading').style.display = 'none';
+        document.getElementById('gex-error').style.display = 'block';
+        document.getElementById('gex-error').innerHTML = `<div class="error-msg">Error: ${err.message}<br><br>This may happen outside market hours if options data is unavailable.</div>`;
+        setStatus('Error loading GEX');
+    }
+}
+
+async function loadConfluence() {
+    switchTab('confluence');
+    document.getElementById('confluence-loading').style.display = 'block';
+    document.getElementById('confluence-loading').innerHTML = '<div class="spinner"></div><div>Analyzing SPX confluence indicators...</div>';
+    document.getElementById('confluence-content').style.display = 'none';
+    document.getElementById('confluence-error').style.display = 'none';
+    setStatus('Running confluence analysis...');
+
+    try {
+        const res = await fetch('/api/confluence');
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        const signalColor = data.signal === 'ENTER LONG' ? '#3fb950' :
+                           data.signal === 'ENTER SHORT' ? '#ff7b72' : '#7d8590';
+
+        // Build indicator checklist
+        let indicatorRows = '';
+        data.scores.forEach(function(s) {
+            const iconClass = s.score === 1 ? 'bull' : s.score === -1 ? 'bear' : 'neutral';
+            const icon = s.score === 1 ? '&#x2191;' : s.score === -1 ? '&#x2193;' : '&#x2022;';
+            indicatorRows += '<div class="indicator-row">'
+                + '<div class="indicator-icon ' + iconClass + '">' + icon + '</div>'
+                + '<div class="indicator-info">'
+                + '<div class="indicator-name">' + s.label + '</div>'
+                + '<div class="indicator-detail">' + s.detail + '</div>'
+                + '</div>'
+                + '<div class="indicator-reason">' + s.reason + '</div>'
+                + '</div>';
+        });
+
+        // Build confluence meter dots
+        let meterDots = '';
+        for (let i = 0; i < 10; i++) {
+            if (i < data.long_count) {
+                meterDots += '<div class="confluence-dot long">&#x2191;</div>';
+            } else if (i < data.long_count + data.neutral_count) {
+                meterDots += '<div class="confluence-dot neutral">&#x2022;</div>';
+            } else {
+                meterDots += '<div class="confluence-dot short">&#x2193;</div>';
+            }
+        }
+
+        // Build live session bar if available
+        let liveHtml = '';
+        if (data.live) {
+            const lv = data.live;
+            const closeColor = lv.change_from_close >= 0 ? '#3fb950' : '#ff7b72';
+            const closeSign = lv.change_from_close >= 0 ? '+' : '';
+            const openColor = lv.change_from_open >= 0 ? '#3fb950' : '#ff7b72';
+            const openSign = lv.change_from_open >= 0 ? '+' : '';
+            const rangeWidth = Math.max(0, Math.min(100, lv.day_range_pct));
+
+            liveHtml = '<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; margin-top:16px; padding:16px; background:#0d1117; border-radius:10px; border:1px solid #21262d;">'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:0.5px;">Live Price</div>'
+                + '<div style="font-size:22px; font-weight:700; color:#e6edf3;">' + lv.current.toLocaleString() + '</div>'
+                + '<div style="font-size:11px; color:' + closeColor + ';">' + closeSign + lv.change_from_close + ' (' + closeSign + lv.change_from_close_pct + '%)</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Prev Close</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#e6edf3;">' + lv.prev_close.toLocaleString() + '</div>'
+                + '<div style="font-size:10px; color:#484f58;">indicators based on this</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Today Open</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#e6edf3;">' + lv.open.toLocaleString() + '</div>'
+                + '<div style="font-size:11px; color:' + openColor + ';">' + openSign + lv.change_from_open_pct + '% from open</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">Session Low</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#ff7b72;">' + lv.low.toLocaleString() + '</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#3fb950; text-transform:uppercase;">Session High</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#3fb950;">' + lv.high.toLocaleString() + '</div>'
+                + '</div>'
+                + '</div>'
+                + '<div style="margin:8px 16px 0; padding:0 16px;">'
+                + '<div style="height:6px; background:#21262d; border-radius:3px; position:relative; overflow:visible;">'
+                + '<div style="height:100%; width:100%; border-radius:3px; background:linear-gradient(90deg, #f47067, #d29922, #3fb950);"></div>'
+                + '<div style="position:absolute; top:-3px; left:' + rangeWidth + '%; width:12px; height:12px; background:#e6edf3; border-radius:50%; border:2px solid #0a0e17; transform:translateX(-50%);"></div>'
+                + '</div>'
+                + '<div style="display:flex; justify-content:space-between; font-size:9px; color:#484f58; margin-top:4px;">'
+                + '<span>Low ' + lv.low.toLocaleString() + '</span>'
+                + '<span>Day Range Position: ' + lv.day_range_pct + '%</span>'
+                + '<span>High ' + lv.high.toLocaleString() + '</span>'
+                + '</div>'
+                + '</div>';
+        }
+
+        document.getElementById('confluence-content').innerHTML = `
+            <div class="signal-card" style="text-align:center;">
+                <div class="signal-date">SPX Swing Trade Confluence</div>
+                <div style="font-size:11px; color:#484f58; margin-bottom:8px;">${data.timestamp} | Threshold: ${data.threshold}/10 indicators must align</div>
+                <div class="signal-close"><span>SPX</span> ${data.live ? data.live.current.toLocaleString() : data.price.toLocaleString()}</div>
+                <div style="font-size:12px; color:${data.change_1d >= 0 ? '#3fb950' : '#ff7b72'}; margin-bottom:4px;">
+                    ${data.change_1d >= 0 ? '+' : ''}${data.change_1d}% prev close
+                </div>
+                ${liveHtml}
+                <div style="margin-top:16px;">
+                    <div class="confluence-signal ${data.signal_class}">${data.signal}</div>
+                </div>
+                <div class="confluence-score" style="color:${signalColor};">${data.strength}/10</div>
+                <div style="color:#7d8590; font-size:12px; margin-bottom:8px;">
+                    <span style="color:#3fb950;">${data.long_count} Long</span> &nbsp;|&nbsp;
+                    <span style="color:#7d8590;">${data.neutral_count} Neutral</span> &nbsp;|&nbsp;
+                    <span style="color:#ff7b72;">${data.short_count} Short</span>
+                </div>
+                <div class="confluence-meter">${meterDots}</div>
+            </div>
+
+            <div class="card" style="margin-top:24px;">
+                <div class="card-title">10 Confluence Indicators</div>
+                ${indicatorRows}
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">How It Works</div>
+                <div style="font-size:12px; color:#7d8590; line-height:1.8; padding:8px 16px;">
+                    This system checks <strong style="color:#e6edf3;">10 independent indicators</strong> for alignment.
+                    A signal only fires when <strong style="color:#e6edf3;">${data.threshold}+ out of 10</strong> agree on direction.<br><br>
+                    <strong style="color:#3fb950;">ENTER LONG</strong> = ${data.threshold}+ indicators are bullish &mdash; look for long/call entries<br>
+                    <strong style="color:#ff7b72;">ENTER SHORT</strong> = ${data.threshold}+ indicators are bearish &mdash; look for short/put entries<br>
+                    <strong style="color:#7d8590;">NO SIGNAL</strong> = Indicators are mixed &mdash; stay flat, wait for confluence<br><br>
+                    <em>The power is in patience. No signal = no trade. Only enter when the stars align.</em>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('confluence-loading').style.display = 'none';
+        document.getElementById('confluence-content').style.display = 'block';
+        setStatus('Confluence: ' + data.signal + ' (' + data.strength + '/10)');
+    } catch (err) {
+        document.getElementById('confluence-loading').style.display = 'none';
+        document.getElementById('confluence-error').style.display = 'block';
+        document.getElementById('confluence-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
+        setStatus('Error loading confluence');
+    }
+}
+
+async function checkExit() {
+    const symbolInput = document.getElementById('exit-symbol').value.trim().toUpperCase();
+    const posType = document.getElementById('exit-type').value;
+    const entryPrice = document.getElementById('exit-entry').value;
+
+    if (!entryPrice) {
+        alert('Please enter your entry price.');
+        return;
+    }
+
+    // Map common names to Yahoo tickers
+    let symbol = symbolInput;
+    if (symbol === 'SPX') symbol = '^GSPC';
+
+    document.getElementById('exit-content').style.display = 'none';
+    document.getElementById('exit-error').style.display = 'none';
+    setStatus('Checking exit signals...');
+
+    try {
+        const res = await fetch('/api/exit?symbol=' + encodeURIComponent(symbol) + '&type=' + posType + '&entry=' + entryPrice);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        const pnlColor = data.pnl_pct >= 0 ? '#3fb950' : '#ff7b72';
+        const posLabel = data.position_type === 'long' ? 'LONG (Calls)' : 'SHORT (Puts)';
+
+        let reasonRows = '';
+        data.reasons.forEach(function(r) {
+            let iconClass, icon;
+            if (r.urgency === 'critical') {
+                iconClass = 'critical';
+                icon = '!!';
+            } else if (r.triggered) {
+                iconClass = 'triggered';
+                icon = '&#x2716;';
+            } else {
+                iconClass = 'safe';
+                icon = '&#x2714;';
+            }
+
+            const urgencyTag = r.triggered && r.urgency !== 'none'
+                ? ' <span class="urgency-tag ' + r.urgency + '">' + r.urgency + '</span>'
+                : '';
+
+            reasonRows += '<div class="exit-reason-row">'
+                + '<div class="exit-reason-icon ' + iconClass + '">' + icon + '</div>'
+                + '<div class="indicator-info">'
+                + '<div class="indicator-name">' + r.label + urgencyTag + '</div>'
+                + '<div class="indicator-detail">' + r.detail + '</div>'
+                + '</div>'
+                + '<div class="indicator-reason">' + r.reason + '</div>'
+                + '</div>';
+        });
+
+        document.getElementById('exit-content').innerHTML = `
+            <div class="signal-card" style="text-align:center;">
+                <div class="signal-date">${data.symbol} Exit Analysis</div>
+                <div style="font-size:12px; color:#7d8590; margin-bottom:8px;">
+                    Position: <strong style="color:#e6edf3;">${posLabel}</strong> |
+                    Entry: <strong style="color:#e6edf3;">$${data.entry_price.toLocaleString()}</strong> |
+                    Current: <strong style="color:#e6edf3;">$${data.current_price.toLocaleString()}</strong>
+                </div>
+                <div style="font-size:36px; font-weight:800; color:${pnlColor}; margin:8px 0;">
+                    ${data.pnl_pct >= 0 ? '+' : ''}${data.pnl_pct}%
+                </div>
+                <div class="exit-signal-badge ${data.exit_class}">${data.exit_signal}</div>
+                <div style="color:#7d8590; font-size:12px; margin-top:8px;">
+                    ${data.triggered_count} of ${data.total_checks} exit conditions triggered
+                </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px; margin-top:16px;">
+                <div class="card" style="text-align:center; padding:20px;">
+                    <div style="font-size:10px; color:#ff7b72; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Stop Loss (-5%)</div>
+                    <div style="font-size:22px; font-weight:700; color:#ff7b72;">$${data.stop_price.toLocaleString()}</div>
+                    <div style="font-size:11px; color:#484f58; margin-top:4px;">Exit if price hits this level</div>
+                </div>
+                <div class="card" style="text-align:center; padding:20px;">
+                    <div style="font-size:10px; color:#d29922; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Partial Target (+5%)</div>
+                    <div style="font-size:22px; font-weight:700; color:#d29922;">$${data.partial_target.toLocaleString()}</div>
+                    <div style="font-size:11px; color:#484f58; margin-top:4px;">Take partial profits here</div>
+                </div>
+                <div class="card" style="text-align:center; padding:20px;">
+                    <div style="font-size:10px; color:#3fb950; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Full Target (+10%)</div>
+                    <div style="font-size:22px; font-weight:700; color:#3fb950;">$${data.full_target.toLocaleString()}</div>
+                    <div style="font-size:11px; color:#484f58; margin-top:4px;">Full take-profit exit</div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">6 Exit Conditions</div>
+                ${reasonRows}
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">Exit Signal Guide</div>
+                <div style="font-size:12px; color:#7d8590; line-height:1.8; padding:8px 16px;">
+                    <strong style="color:#ff7b72;">EXIT NOW</strong> = Stop loss hit or critical risk &mdash; close position immediately<br>
+                    <strong style="color:#f47067;">EXIT POSITION</strong> = 3+ exit conditions triggered &mdash; take profits / cut losses<br>
+                    <strong style="color:#d29922;">TIGHTEN STOP</strong> = 2 conditions triggered &mdash; move stop closer, prepare to exit<br>
+                    <strong style="color:#3fb950;">HOLD POSITION</strong> = 0-1 conditions triggered &mdash; trade thesis intact, stay in<br><br>
+                    <em>Stop loss: -5% | Profit target: +5% partial, +10% full exit</em>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('exit-content').style.display = 'block';
+        setStatus('Exit check: ' + data.exit_signal + ' (' + data.pnl_pct + '%)');
+    } catch (err) {
+        document.getElementById('exit-error').style.display = 'block';
+        document.getElementById('exit-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
+        setStatus('Error checking exit');
+    }
+}
+
+let scanDetailOpen = null;
+
+function toggleScanDetail(idx) {
+    const panel = document.getElementById('scan-detail-' + idx);
+    if (!panel) return;
+    if (scanDetailOpen === idx) {
+        panel.classList.remove('active');
+        scanDetailOpen = null;
+    } else {
+        // Close any open panel
+        if (scanDetailOpen !== null) {
+            const prev = document.getElementById('scan-detail-' + scanDetailOpen);
+            if (prev) prev.classList.remove('active');
+        }
+        panel.classList.add('active');
+        scanDetailOpen = idx;
+    }
+}
+
+async function loadScan() {
+    switchTab('scanner');
+    document.getElementById('scanner-loading').style.display = 'block';
+    document.getElementById('scanner-content').style.display = 'none';
+    document.getElementById('scanner-error').style.display = 'none';
+
+    // Check for custom tickers
+    const customInput = document.getElementById('custom-tickers').value.trim();
+    let url = '/api/scan';
+    let scanLabel = 'default 38 tickers';
+    if (customInput) {
+        const tickers = customInput.toUpperCase().split(',').map(function(t) { return t.trim(); }).filter(function(t) { return t.length > 0; });
+        url = '/api/scan?tickers=' + encodeURIComponent(tickers.join(','));
+        scanLabel = tickers.length + ' custom ticker' + (tickers.length !== 1 ? 's' : '');
+    }
+
+    document.getElementById('scanner-loading').innerHTML = '<div class="spinner"></div><div>Scanning ' + scanLabel + ' for confluence signals...</div>';
+    setStatus('Scanning ' + scanLabel + '...');
+
+    try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(300000) });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        let tickerRows = '';
+        data.rows.forEach(function(r, idx) {
+            const chgColor = r.change_1d >= 0 ? 'green' : 'red';
+            const chg5Color = r.change_5d >= 0 ? 'green' : 'red';
+            const chgSign = r.change_1d >= 0 ? '+' : '';
+            const chg5Sign = r.change_5d >= 0 ? '+' : '';
+
+            // Strength pips
+            let pips = '';
+            for (let i = 0; i < 10; i++) {
+                let pipColor;
+                if (r.long_count > r.short_count) {
+                    pipColor = i < r.long_count ? '#238636' : (i < r.long_count + r.neutral_count ? '#30363d' : '#da3633');
+                } else {
+                    pipColor = i < r.short_count ? '#da3633' : (i < r.short_count + r.neutral_count ? '#30363d' : '#238636');
+                }
+                pips += '<div class="scan-strength-pip" style="background:' + pipColor + ';"></div>';
+            }
+
+            // Detail panel with indicator breakdown
+            let detailRows = '';
+            r.scores.forEach(function(s) {
+                const dIcon = s.score === 1 ? '&#x2191;' : s.score === -1 ? '&#x2193;' : '&#x2022;';
+                const dColor = s.score === 1 ? '#3fb950' : s.score === -1 ? '#ff7b72' : '#7d8590';
+                detailRows += '<div style="display:flex; align-items:center; gap:8px; padding:4px 0; font-size:11px;">'
+                    + '<span style="color:' + dColor + '; font-weight:700; width:16px;">' + dIcon + '</span>'
+                    + '<span style="color:#e6edf3; width:200px;">' + s.label + '</span>'
+                    + '<span style="color:#7d8590;">' + s.detail + '</span>'
+                    + '</div>';
+            });
+
+            tickerRows += '<div>'
+                + '<div class="scan-ticker-row" style="cursor:pointer;" onclick="toggleScanDetail(' + idx + ')">'
+                + '<div class="symbol">' + r.symbol + '</div>'
+                + '<div>$' + r.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '</div>'
+                + '<div class="' + chgColor + '">' + chgSign + r.change_1d + '%</div>'
+                + '<div class="' + chg5Color + '">' + chg5Sign + r.change_5d + '%</div>'
+                + '<div><span class="scan-signal-badge ' + r.signal_class + '">' + r.signal + '</span></div>'
+                + '<div style="color:#7d8590;">' + r.long_count + 'L / ' + r.short_count + 'S</div>'
+                + '<div style="color:#7d8590;">RSI ' + r.rsi + '</div>'
+                + '<div class="scan-strength-bar">' + pips + '</div>'
+                + '</div>'
+                + '<div class="scan-detail-panel" id="scan-detail-' + idx + '">'
+                + '<div style="font-size:11px; color:#484f58; margin-bottom:8px;">Indicator Breakdown for <strong style="color:#e6edf3;">' + r.symbol + '</strong></div>'
+                + detailRows
+                + '</div>'
+                + '</div>';
+        });
+
+        const signalTickers = data.rows.filter(function(r) { return r.signal !== 'NO SIGNAL'; });
+        let signalSummary = '';
+        if (signalTickers.length > 0) {
+            signalSummary = '<div class="signal-card" style="text-align:center; margin-bottom:24px;">'
+                + '<div style="font-size:14px; color:#e6edf3; font-weight:600; margin-bottom:12px;">Active Signals Found</div>';
+            signalTickers.forEach(function(t) {
+                const sigColor = t.signal === 'ENTER LONG' ? '#3fb950' : '#ff7b72';
+                signalSummary += '<div style="display:inline-block; margin:4px 8px; padding:6px 16px; border-radius:8px; '
+                    + 'background:' + (t.signal === 'ENTER LONG' ? '#0d4429' : '#4a1111') + '; '
+                    + 'border:1px solid ' + sigColor + ';">'
+                    + '<span style="font-weight:700; color:#e6edf3;">' + t.symbol + '</span> '
+                    + '<span style="color:' + sigColor + '; font-weight:600;">' + t.signal + '</span> '
+                    + '<span style="color:#7d8590; font-size:11px;">(' + t.strength + '/10)</span>'
+                    + '</div>';
+            });
+            signalSummary += '</div>';
+        }
+
+        document.getElementById('scanner-content').innerHTML = `
+            <div style="font-size:11px; color:#484f58; margin-bottom:12px; text-align:right;">
+                Scanned ${data.total_scanned} tickers | ${data.signals_found} signals found | ${data.timestamp}
+            </div>
+            ${signalSummary}
+            <div class="card">
+                <div class="card-title">All Tickers (click row for details)</div>
+                <div class="scan-ticker-row" style="font-weight:700; color:#7d8590; font-size:11px; border-bottom:2px solid #21262d;">
+                    <div>TICKER</div>
+                    <div>PRICE</div>
+                    <div>1D</div>
+                    <div>5D</div>
+                    <div>SIGNAL</div>
+                    <div>SCORE</div>
+                    <div>RSI</div>
+                    <div>STRENGTH</div>
+                </div>
+                ${tickerRows}
+            </div>
+        `;
+
+        document.getElementById('scanner-loading').style.display = 'none';
+        document.getElementById('scanner-content').style.display = 'block';
+        setStatus('Scan complete - ' + data.signals_found + ' signals found');
+    } catch (err) {
+        document.getElementById('scanner-loading').style.display = 'none';
+        document.getElementById('scanner-error').style.display = 'block';
+        document.getElementById('scanner-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
+        setStatus('Error scanning tickers');
+    }
+}
+
+async function retrainModel() {
+    const btn = document.getElementById('trainBtn');
+    btn.disabled = true;
+    btn.textContent = 'Training...';
+    setStatus('Refreshing data & retraining model...');
+
+    try {
+        const res = await fetch('/api/train');
+        const data = await res.json();
+
+        if (!data.success) throw new Error(data.error);
+
+        btn.textContent = 'Done!';
+        setStatus('Model retrained successfully');
+        setTimeout(() => {
+            btn.textContent = 'Refresh & Retrain';
+            btn.disabled = false;
+        }, 2000);
+
+        loadPrediction();
+    } catch (err) {
+        btn.textContent = 'Error';
+        setStatus('Error: ' + err.message);
+        setTimeout(() => {
+            btn.textContent = 'Refresh & Retrain';
+            btn.disabled = false;
+        }, 3000);
+    }
+}
+
+// ===== SPX OPTIONS TAB =====
+async function loadOptions() {
+    switchTab('options');
+    document.getElementById('options-loading').style.display = 'block';
+    document.getElementById('options-loading').innerHTML = '<div class="spinner"></div><div>Loading SPX options analysis...</div>';
+    document.getElementById('options-content').style.display = 'none';
+    document.getElementById('options-error').style.display = 'none';
+    setStatus('Fetching options data...');
+
+    try {
+        const res = await fetch('/api/options');
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error);
+
+        const ivColor = d.iv_rank > 70 ? '#ff7b72' : d.iv_rank > 40 ? '#d29922' : '#3fb950';
+        const ivBg = d.iv_rank > 70 ? '#4a1111' : d.iv_rank > 40 ? '#2a2000' : '#0d4429';
+
+        // Build Greeks table
+        function greeksRow(label, g) {
+            return '<tr>'
+                + '<td style="color:#e6edf3; font-weight:600;">' + label + '</td>'
+                + '<td>' + g.call.delta + '</td>'
+                + '<td>' + g.call.gamma + '</td>'
+                + '<td>' + g.call.theta + '</td>'
+                + '<td>' + g.call.vega + '</td>'
+                + '<td style="border-left:1px solid #21262d;">' + g.put.delta + '</td>'
+                + '<td>' + g.put.gamma + '</td>'
+                + '<td>' + g.put.theta + '</td>'
+                + '<td>' + g.put.vega + '</td>'
+                + '</tr>';
+        }
+
+        // Build strategies
+        let stratHtml = '';
+        d.strategies.forEach(function(s) {
+            const biasColor = s.bias === 'BULLISH' ? '#3fb950' : s.bias === 'BEARISH' ? '#ff7b72' :
+                             s.bias === 'VOLATILITY' ? '#a371f7' : '#d29922';
+            stratHtml += '<div style="padding:12px 16px; border-bottom:1px solid #1c1e23;">'
+                + '<div style="display:flex; justify-content:space-between; align-items:center;">'
+                + '<div>'
+                + '<span style="font-weight:600; color:#e6edf3;">' + s.name + '</span>'
+                + ' <span class="tag" style="background:' + biasColor + '22; color:' + biasColor + '; font-size:9px; padding:2px 6px; border-radius:3px;">' + s.bias + '</span>'
+                + '</div>'
+                + '</div>'
+                + '<div style="font-size:11px; color:#7d8590; margin-top:4px;">' + s.reason + '</div>'
+                + '<div style="font-size:10px; color:#484f58; margin-top:2px;">' + s.risk + '</div>'
+                + '</div>';
+        });
+
+        // Put/Call data
+        let pcHtml = '';
+        if (d.pc_volume_ratio !== null) {
+            const pcColor = d.pc_volume_ratio > 1 ? '#ff7b72' : d.pc_volume_ratio < 0.7 ? '#3fb950' : '#d29922';
+            const pcLabel = d.pc_volume_ratio > 1 ? 'BEARISH' : d.pc_volume_ratio < 0.7 ? 'BULLISH' : 'NEUTRAL';
+            pcHtml = '<div class="metric"><span class="metric-label">P/C Volume Ratio</span>'
+                + '<span class="metric-value" style="color:' + pcColor + ';">' + d.pc_volume_ratio + ' (' + pcLabel + ')</span></div>';
+        }
+        if (d.pc_oi_ratio !== null) {
+            pcHtml += '<div class="metric"><span class="metric-label">P/C Open Interest</span>'
+                + '<span class="metric-value">' + d.pc_oi_ratio + '</span></div>';
+        }
+
+        // Skew
+        let skewHtml = '<div style="color:#484f58; font-size:11px;">Skew data unavailable</div>';
+        if (d.skew) {
+            skewHtml = '<div class="metric"><span class="metric-label">ATM Call IV</span><span class="metric-value">' + d.skew.call_iv + '%</span></div>'
+                + '<div class="metric"><span class="metric-label">ATM Put IV</span><span class="metric-value">' + d.skew.put_iv + '%</span></div>'
+                + '<div class="metric"><span class="metric-label">Skew (Put-Call)</span><span class="metric-value">' + d.skew.skew + '%</span></div>'
+                + '<div class="metric"><span class="metric-label">Skew Ratio</span><span class="metric-value">' + d.skew.skew_ratio + '</span></div>'
+                + '<div style="font-size:10px; color:#484f58;">ATM Strike: ' + d.skew.atm_strike + ' | Exp: ' + d.skew.expiration + '</div>';
+        }
+
+        const lv = d.levels;
+        const ss = d.suggested_strikes;
+
+        // Build live session panel (same as Confluence)
+        let optLiveHtml = '';
+        if (d.live) {
+            const olv = d.live;
+            const oCloseColor = olv.change_from_close >= 0 ? '#3fb950' : '#ff7b72';
+            const oCloseSign = olv.change_from_close >= 0 ? '+' : '';
+            const oOpenColor = olv.change_from_open >= 0 ? '#3fb950' : '#ff7b72';
+            const oOpenSign = olv.change_from_open >= 0 ? '+' : '';
+            const oRangeWidth = Math.max(0, Math.min(100, olv.day_range_pct));
+
+            optLiveHtml = '<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; margin-top:16px; padding:16px; background:#0d1117; border-radius:10px; border:1px solid #21262d;">'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:0.5px;">Live Price</div>'
+                + '<div style="font-size:22px; font-weight:700; color:#e6edf3;">' + olv.current.toLocaleString() + '</div>'
+                + '<div style="font-size:11px; color:' + oCloseColor + ';">' + oCloseSign + olv.change_from_close + ' (' + oCloseSign + olv.change_from_close_pct + '%)</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Prev Close</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#e6edf3;">' + olv.prev_close.toLocaleString() + '</div>'
+                + '<div style="font-size:10px; color:#484f58;">indicators based on this</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Today Open</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#e6edf3;">' + olv.open.toLocaleString() + '</div>'
+                + '<div style="font-size:11px; color:' + oOpenColor + ';">' + oOpenSign + olv.change_from_open_pct + '% from open</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">Session Low</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#ff7b72;">' + olv.low.toLocaleString() + '</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#3fb950; text-transform:uppercase;">Session High</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#3fb950;">' + olv.high.toLocaleString() + '</div>'
+                + '</div>'
+                + '</div>'
+                + '<div style="margin:8px 16px 0; padding:0 16px;">'
+                + '<div style="height:6px; background:#21262d; border-radius:3px; position:relative; overflow:visible;">'
+                + '<div style="height:100%; width:100%; border-radius:3px; background:linear-gradient(90deg, #f47067, #d29922, #3fb950);"></div>'
+                + '<div style="position:absolute; top:-3px; left:' + oRangeWidth + '%; width:12px; height:12px; background:#e6edf3; border-radius:50%; border:2px solid #0a0e17; transform:translateX(-50%);"></div>'
+                + '</div>'
+                + '<div style="display:flex; justify-content:space-between; font-size:9px; color:#484f58; margin-top:4px;">'
+                + '<span>Low ' + olv.low.toLocaleString() + '</span>'
+                + '<span>Day Range Position: ' + olv.day_range_pct + '%</span>'
+                + '<span>High ' + olv.high.toLocaleString() + '</span>'
+                + '</div>'
+                + '</div>';
+        }
+
+        document.getElementById('options-content').innerHTML = `
+            <div class="signal-card" style="text-align:center;">
+                <div class="signal-date">SPX Options Dashboard — 0DTE to 30DTE</div>
+                <div style="font-size:11px; color:#484f58; margin-bottom:8px;">Updated ${d.timestamp} | Source: ${d.data_source}</div>
+                <div class="signal-close"><span>SPX</span> ${d.live ? d.live.current.toLocaleString() : d.spot.toLocaleString()}</div>
+                ${optLiveHtml}
+
+                <div style="display:inline-block; margin:16px auto; padding:12px 28px; border-radius:12px; background:${ivBg}; border:2px solid ${ivColor};">
+                    <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px;">IV Rank</div>
+                    <div style="font-size:36px; font-weight:800; color:${ivColor};">${d.iv_rank}</div>
+                    <div style="font-size:12px; color:${ivColor}; font-weight:600;">${d.iv_label}</div>
+                </div>
+                <div style="font-size:12px; color:#7d8590; max-width:500px; margin:0 auto;">${d.iv_strategy}</div>
+            </div>
+
+            <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; margin-top:24px;">
+                <div class="card" style="text-align:center; padding:20px;">
+                    <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Expected Move — 0DTE</div>
+                    <div style="font-size:22px; font-weight:700; color:#e6edf3;">±${d.expected_move_1d.toFixed(0)} pts</div>
+                    <div style="font-size:11px; color:#484f58;">${d.em_1d_range[0].toLocaleString()} — ${d.em_1d_range[1].toLocaleString()}</div>
+                    <div style="font-size:11px; color:#d29922;">±${d.em_1d_pct}%</div>
+                </div>
+                <div class="card" style="text-align:center; padding:20px;">
+                    <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Expected Move — Weekly</div>
+                    <div style="font-size:22px; font-weight:700; color:#e6edf3;">±${d.expected_move_5d.toFixed(0)} pts</div>
+                    <div style="font-size:11px; color:#484f58;">${d.em_5d_range[0].toLocaleString()} — ${d.em_5d_range[1].toLocaleString()}</div>
+                    <div style="font-size:11px; color:#d29922;">±${d.em_5d_pct}%</div>
+                </div>
+                <div class="card" style="text-align:center; padding:20px;">
+                    <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Expected Move — Monthly</div>
+                    <div style="font-size:22px; font-weight:700; color:#e6edf3;">±${d.expected_move_30d.toFixed(0)} pts</div>
+                    <div style="font-size:11px; color:#484f58;">${d.em_30d_range[0].toLocaleString()} — ${d.em_30d_range[1].toLocaleString()}</div>
+                    <div style="font-size:11px; color:#d29922;">±${d.em_30d_pct}%</div>
+                </div>
+            </div>
+
+            <div class="grid" style="margin-top:16px;">
+                <div class="card">
+                    <div class="card-title">Implied Volatility</div>
+                    <div class="metric"><span class="metric-label">IV Rank</span><span class="metric-value" style="color:${ivColor};">${d.iv_rank}%</span></div>
+                    <div class="metric"><span class="metric-label">IV Percentile</span><span class="metric-value">${d.iv_percentile}%</span></div>
+                    <div class="metric"><span class="metric-label">HV (20-day)</span><span class="metric-value">${d.hv_20}%</span></div>
+                    <div class="metric"><span class="metric-label">HV (5-day)</span><span class="metric-value">${d.hv_5}%</span></div>
+                    <div class="metric"><span class="metric-label">HV Median</span><span class="metric-value">${d.hv_median}%</span></div>
+                    ${pcHtml}
+                </div>
+                <div class="card">
+                    <div class="card-title">Put/Call Skew</div>
+                    ${skewHtml}
+                </div>
+                <div class="card">
+                    <div class="card-title">Technicals</div>
+                    <div class="gauge-row">
+                        <span class="gauge-label">RSI(14)</span>
+                        <div class="gauge-track">
+                            <div class="gauge-fill" style="width:${d.technicals.rsi}%; background:${gaugeColor(d.technicals.rsi, true)}"></div>
+                        </div>
+                        <span class="gauge-value ${rsiColor(d.technicals.rsi)}">${d.technicals.rsi}</span>
+                    </div>
+                    <div class="metric"><span class="metric-label">ATR (14-day)</span><span class="metric-value">${d.technicals.atr_14} (${d.technicals.atr_pct}%)</span></div>
+                    <div class="metric"><span class="metric-label">ATR (5-day)</span><span class="metric-value">${d.technicals.atr_5}</span></div>
+                    <div class="metric"><span class="metric-label">Day Range</span><span class="metric-value">${d.technicals.day_range} pts</span></div>
+                    <div class="metric"><span class="metric-label">Body/Range Ratio</span><span class="metric-value">${d.technicals.body_ratio}%</span></div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">Suggested Strikes</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; text-align:center; padding:12px;">
+                    <div>
+                        <div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">OTM Put (Weekly)</div>
+                        <div style="font-size:18px; font-weight:700; color:#e6edf3;">${ss.otm_put_2}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">OTM Put (0DTE)</div>
+                        <div style="font-size:18px; font-weight:700; color:#e6edf3;">${ss.otm_put_1}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#d29922; text-transform:uppercase;">ATM Strike</div>
+                        <div style="font-size:18px; font-weight:700; color:#d29922;">${ss.atm}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#3fb950; text-transform:uppercase;">OTM Call (0DTE)</div>
+                        <div style="font-size:18px; font-weight:700; color:#e6edf3;">${ss.otm_call_1}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#3fb950; text-transform:uppercase;">OTM Call (Weekly)</div>
+                        <div style="font-size:18px; font-weight:700; color:#e6edf3;">${ss.otm_call_2}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">Key Levels (Pivot Points)</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; text-align:center; padding:12px;">
+                    <div>
+                        <div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">S2</div>
+                        <div style="font-size:16px; font-weight:600; color:#ff7b72;">${lv.s2.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">S1</div>
+                        <div style="font-size:16px; font-weight:600; color:#ff7b72;">${lv.s1.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#d29922; text-transform:uppercase;">Pivot</div>
+                        <div style="font-size:16px; font-weight:600; color:#d29922;">${lv.pivot.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#3fb950; text-transform:uppercase;">R1</div>
+                        <div style="font-size:16px; font-weight:600; color:#3fb950;">${lv.r1.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#3fb950; text-transform:uppercase;">R2</div>
+                        <div style="font-size:16px; font-weight:600; color:#3fb950;">${lv.r2.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:12px; text-align:center; padding:12px; margin-top:8px; border-top:1px solid #21262d;">
+                    <div>
+                        <div style="font-size:10px; color:#7d8590;">20D Low</div>
+                        <div style="font-size:14px; color:#ff7b72;">${lv.low_20d.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#7d8590;">5D Low</div>
+                        <div style="font-size:14px; color:#e6edf3;">${lv.low_5d.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#7d8590;">5D High</div>
+                        <div style="font-size:14px; color:#e6edf3;">${lv.high_5d.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#7d8590;">20D High</div>
+                        <div style="font-size:14px; color:#3fb950;">${lv.high_20d.toLocaleString()}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">ATM Greeks Snapshot (Strike ${ss.atm})</div>
+                <table style="width:100%; font-size:12px; color:#c9d1d9;">
+                    <thead>
+                        <tr style="color:#7d8590; font-size:10px; text-transform:uppercase;">
+                            <th style="padding:8px; text-align:left;">DTE</th>
+                            <th style="padding:8px;">Call Δ</th><th style="padding:8px;">Call Γ</th>
+                            <th style="padding:8px;">Call Θ</th><th style="padding:8px;">Call V</th>
+                            <th style="padding:8px; border-left:1px solid #21262d;">Put Δ</th><th style="padding:8px;">Put Γ</th>
+                            <th style="padding:8px;">Put Θ</th><th style="padding:8px;">Put V</th>
+                        </tr>
+                    </thead>
+                    <tbody style="text-align:center;">
+                        ${greeksRow('0DTE', d.greeks_0dte)}
+                        ${greeksRow('Weekly (5)', d.greeks_weekly)}
+                        ${greeksRow('Monthly (21)', d.greeks_monthly)}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">Suggested Strategies</div>
+                ${stratHtml}
+            </div>
+        `;
+
+        document.getElementById('options-loading').style.display = 'none';
+        document.getElementById('options-content').style.display = 'block';
+        setStatus('Options: IV Rank ' + d.iv_rank + ' (' + d.iv_label + ')');
+    } catch (err) {
+        document.getElementById('options-loading').style.display = 'none';
+        document.getElementById('options-error').style.display = 'block';
+        document.getElementById('options-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
+        setStatus('Error loading options');
+    }
+}
+
+// ===== CONTRACT ANALYZER =====
+async function analyzeContract() {
+    const strike = document.getElementById('contract-strike').value;
+    const exp = document.getElementById('contract-exp').value;
+    const type = document.getElementById('contract-type').value;
+    const premium = document.getElementById('contract-premium').value;
+    const currentPrice = document.getElementById('contract-current-price').value;
+    const qty = document.getElementById('contract-qty').value || 1;
+    const target = document.getElementById('contract-target').value;
+
+    if (!strike || !exp || !premium) {
+        alert('Strike, Expiration, and Entry Premium are required.');
+        return;
+    }
+
+    document.getElementById('contract-result').style.display = 'block';
+    document.getElementById('contract-result').innerHTML = '<div class="loading"><div class="spinner"></div><div>Analyzing contract...</div></div>';
+    setStatus('Analyzing SPX contract...');
+
+    try {
+        let url = '/api/options/contract?strike=' + strike + '&expiration=' + exp + '&type=' + type
+            + '&premium=' + premium + '&contracts=' + qty;
+        if (currentPrice) url += '&current_price=' + currentPrice;
+        if (target) url += '&target=' + target;
+
+        const res = await fetch(url);
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error);
+
+        const typeLabel = d.option_type === 'call' ? 'CALL' : 'PUT';
+        const typeColor = d.option_type === 'call' ? '#3fb950' : '#ff7b72';
+
+        // Probability gauge
+        const probColor = d.prob_profit > 60 ? '#3fb950' : d.prob_profit > 40 ? '#d29922' : '#ff7b72';
+        const evColor = d.expected_value >= 0 ? '#3fb950' : '#ff7b72';
+        const evSign = d.expected_value >= 0 ? '+' : '';
+
+        // Scenario table
+        let scenarioRows = '';
+        d.scenarios.forEach(function(s) {
+            const pnlColor = s.pnl >= 0 ? '#3fb950' : '#ff7b72';
+            const pnlSign = s.pnl >= 0 ? '+' : '';
+            const moveSign = s.move >= 0 ? '+' : '';
+            const isCurrentRow = Math.abs(s.move) < 1 ? 'background:#1a1520;' : '';
+            scenarioRows += '<tr style="' + isCurrentRow + '">'
+                + '<td style="padding:6px 12px;">' + s.spot.toLocaleString() + '</td>'
+                + '<td style="padding:6px 12px; color:#7d8590;">' + moveSign + s.move_pct + '%</td>'
+                + '<td style="padding:6px 12px;">$' + s.option_value.toFixed(2) + '</td>'
+                + '<td style="padding:6px 12px; color:#7d8590;">$' + s.time_value.toFixed(2) + '</td>'
+                + '<td style="padding:6px 12px; color:' + pnlColor + '; font-weight:600;">' + pnlSign + '$' + s.pnl.toLocaleString() + '</td>'
+                + '<td style="padding:6px 12px; color:' + pnlColor + ';">' + pnlSign + s.pnl_pct.toFixed(0) + '%</td>'
+                + '</tr>';
+        });
+
+        // Theta decay
+        let decayRows = '';
+        d.theta_decay.forEach(function(t) {
+            const pctColor = t.pct_remaining > 70 ? '#3fb950' : t.pct_remaining > 40 ? '#d29922' : '#ff7b72';
+            decayRows += '<tr>'
+                + '<td style="padding:6px 12px;">Day ' + t.day + '</td>'
+                + '<td style="padding:6px 12px;">' + t.dte_remaining + '</td>'
+                + '<td style="padding:6px 12px;">$' + t.value.toFixed(2) + '</td>'
+                + '<td style="padding:6px 12px; color:#ff7b72;">-$' + t.theta_lost.toFixed(2) + '</td>'
+                + '<td style="padding:6px 12px; color:' + pctColor + ';">' + t.pct_remaining + '%</td>'
+                + '</tr>';
+        });
+
+        // Target analysis
+        let targetHtml = '';
+        if (d.target) {
+            const t = d.target;
+            targetHtml = '<div class="card" style="margin-top:16px; border:1px solid #d29922;">'
+                + '<div class="card-title" style="color:#d29922;">Target Exit Analysis — Sell at $' + t.target_premium.toFixed(2) + '</div>'
+                + '<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; text-align:center; padding:12px;">'
+                + '<div>'
+                + '<div style="font-size:10px; color:#7d8590;">Target Profit</div>'
+                + '<div style="font-size:20px; font-weight:700; color:#3fb950;">+$' + t.target_profit.toLocaleString() + '</div>'
+                + '<div style="font-size:11px; color:#3fb950;">+' + t.target_pct + '%</div>'
+                + '</div>'
+                + '<div>'
+                + '<div style="font-size:10px; color:#7d8590;">SPX Needs (Now)</div>'
+                + '<div style="font-size:20px; font-weight:700; color:#e6edf3;">' + t.spot_needed_now.toLocaleString() + '</div>'
+                + '<div style="font-size:11px; color:#484f58;">~' + Math.abs(t.spot_move_needed).toFixed(0) + ' pts move</div>'
+                + '</div>'
+                + '<div>'
+                + '<div style="font-size:10px; color:#7d8590;">Prob (Swing Trade)</div>'
+                + '<div style="font-size:20px; font-weight:700; color:' + (t.prob_swing_trade > 40 ? '#3fb950' : '#ff7b72') + ';">' + t.prob_swing_trade + '%</div>'
+                + '<div style="font-size:11px; color:#484f58;">reach target now</div>'
+                + '</div>'
+                + '<div>'
+                + '<div style="font-size:10px; color:#7d8590;">SPX Needs (Expiry)</div>'
+                + '<div style="font-size:20px; font-weight:700; color:#e6edf3;">' + t.spot_needed_at_expiry.toLocaleString() + '</div>'
+                + '<div style="font-size:11px; color:#484f58;">at expiration</div>'
+                + '</div>'
+                + '<div>'
+                + '<div style="font-size:10px; color:#7d8590;">Prob at Expiry</div>'
+                + '<div style="font-size:20px; font-weight:700; color:' + (t.prob_at_expiry > 40 ? '#3fb950' : '#ff7b72') + ';">' + t.prob_at_expiry + '%</div>'
+                + '</div>'
+                + '</div>'
+                + '</div>';
+        }
+
+        document.getElementById('contract-result').innerHTML = `
+            <div class="signal-card" style="text-align:center;">
+                <div class="signal-date">SPX ${d.strike} ${typeLabel} — ${d.expiration}</div>
+                <div style="font-size:11px; color:#484f58; margin-bottom:8px;">${d.dte} DTE | ${d.contracts} contract${d.contracts > 1 ? 's' : ''} | IV: ${d.implied_vol}% (${d.iv_source === 'live_chain' ? 'LIVE' : d.iv_source === 'current_price' ? 'from price' : 'from entry'}) | Hist Vol: ${d.hist_vol}% | Updated ${d.timestamp}</div>
+                <div style="font-size:14px; color:#e6edf3; margin-bottom:8px;">
+                    SPX Spot: <strong>${d.spot.toLocaleString()}</strong> | Entry: <strong>$${d.premium.toFixed(2)}</strong>${d.live_chain ? ' | Bid: <strong>$' + d.live_chain.bid.toFixed(2) + '</strong> Ask: <strong>$' + d.live_chain.ask.toFixed(2) + '</strong> Mid: <strong>$' + d.live_chain.mid_price.toFixed(2) + '</strong>' : (d.current_price ? ' | Market: <strong>$' + d.current_price.toFixed(2) + '</strong>' : '')} | Cost: <strong>$${d.total_cost.toLocaleString()}</strong>
+                </div>
+                ${d.live_chain ? '<div style="font-size:11px; color:#484f58; margin-bottom:4px;">Last: $' + d.live_chain.last_price.toFixed(2) + ' | Vol: ' + d.live_chain.volume.toLocaleString() + ' | OI: ' + d.live_chain.open_interest.toLocaleString() + '</div>' : ''}
+                <div style="font-size:13px; margin-bottom:16px; color:${d.market_pnl >= 0 ? '#3fb950' : '#ff7b72'};">
+                    Current P&L: <strong>${d.market_pnl >= 0 ? '+' : ''}$${d.market_pnl.toLocaleString()}</strong> (${d.market_pnl_pct >= 0 ? '+' : ''}${d.market_pnl_pct.toFixed(1)}%)${d.iv_source === 'live_chain' ? ' <span style="color:#3fb950;">● LIVE</span>' : ''}
+                </div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:16px;">
+                    <div style="padding:16px; border-radius:12px; background:${probColor}22; border:2px solid ${probColor};">
+                        <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px;">Prob of Profit</div>
+                        <div style="font-size:36px; font-weight:800; color:${probColor};">${d.prob_profit}%</div>
+                        <div style="font-size:11px; color:#484f58;">at expiration</div>
+                    </div>
+                    <div style="padding:16px; border-radius:12px; background:#21262d;">
+                        <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px;">Prob ITM</div>
+                        <div style="font-size:36px; font-weight:800; color:#e6edf3;">${d.prob_itm}%</div>
+                        <div style="font-size:11px; color:#484f58;">finishes in the money</div>
+                    </div>
+                    <div style="padding:16px; border-radius:12px; background:#4a111122; border:2px solid #ff7b7244;">
+                        <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px;">Prob Max Loss</div>
+                        <div style="font-size:36px; font-weight:800; color:#ff7b72;">${d.prob_max_loss}%</div>
+                        <div style="font-size:11px; color:#484f58;">expires worthless</div>
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px;">
+                    <div class="card" style="text-align:center; padding:14px; border:1px solid ${typeColor}44;">
+                        <div style="font-size:10px; color:${typeColor}; text-transform:uppercase;">Breakeven Now</div>
+                        <div style="font-size:18px; font-weight:700; color:#e6edf3;">${d.breakeven.toLocaleString()}</div>
+                        <div style="font-size:11px; color:#484f58;">${d.breakeven_move > 0 ? '+' : ''}${d.breakeven_move}% from spot</div>
+                    </div>
+                    <div class="card" style="text-align:center; padding:14px;">
+                        <div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Breakeven Expiry</div>
+                        <div style="font-size:18px; font-weight:700; color:#7d8590;">${d.breakeven_expiry.toLocaleString()}</div>
+                        <div style="font-size:11px; color:#484f58;">${d.breakeven_expiry_move > 0 ? '+' : ''}${d.breakeven_expiry_move}% from spot</div>
+                    </div>
+                    <div class="card" style="text-align:center; padding:14px;">
+                        <div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">Max Loss</div>
+                        <div style="font-size:18px; font-weight:700; color:#ff7b72;">$${d.max_loss.toLocaleString()}</div>
+                        <div style="font-size:11px; color:#484f58;">premium paid</div>
+                    </div>
+                    <div class="card" style="text-align:center; padding:14px;">
+                        <div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Theoretical</div>
+                        <div style="font-size:18px; font-weight:700; color:#e6edf3;">$${d.theoretical_price.toFixed(2)}</div>
+                        <div style="font-size:11px; color:#484f58;">live fair value</div>
+                    </div>
+                    <div class="card" style="text-align:center; padding:14px;">
+                        <div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Expected Value</div>
+                        <div style="font-size:18px; font-weight:700; color:${evColor};">${evSign}$${Math.abs(d.expected_value).toLocaleString()}</div>
+                        <div style="font-size:11px; color:#484f58;">${evSign}$${Math.abs(d.ev_per_contract).toFixed(0)}/contract</div>
+                    </div>
+                </div>
+            </div>
+
+            ${targetHtml}
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">Greeks</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:12px; text-align:center; padding:12px;">
+                    <div>
+                        <div style="font-size:10px; color:#7d8590;">Delta (Δ)</div>
+                        <div style="font-size:18px; font-weight:600; color:#e6edf3;">${d.greeks.delta}</div>
+                        <div style="font-size:10px; color:#484f58;">$${(Math.abs(d.greeks.delta) * 100).toFixed(0)} per $1 move</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#7d8590;">Gamma (Γ)</div>
+                        <div style="font-size:18px; font-weight:600; color:#e6edf3;">${d.greeks.gamma}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#7d8590;">Theta (Θ)</div>
+                        <div style="font-size:18px; font-weight:600; color:#ff7b72;">${d.greeks.theta}</div>
+                        <div style="font-size:10px; color:#484f58;">$${(Math.abs(d.greeks.theta) * 100).toFixed(0)} lost/day</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#7d8590;">Vega (V)</div>
+                        <div style="font-size:18px; font-weight:600; color:#e6edf3;">${d.greeks.vega}</div>
+                        <div style="font-size:10px; color:#484f58;">$${(Math.abs(d.greeks.vega) * 100).toFixed(0)} per 1% IV</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">P&L Scenarios — Current Value at Different SPX Prices</div>
+                <table style="width:100%; font-size:12px; color:#c9d1d9;">
+                    <thead>
+                        <tr style="color:#7d8590; font-size:10px; text-transform:uppercase; border-bottom:2px solid #21262d;">
+                            <th style="padding:8px 12px; text-align:left;">SPX Price</th>
+                            <th style="padding:8px 12px;">Move</th>
+                            <th style="padding:8px 12px;">Option Value</th>
+                            <th style="padding:8px 12px;">Time Value</th>
+                            <th style="padding:8px 12px;">P&L</th>
+                            <th style="padding:8px 12px;">Return</th>
+                        </tr>
+                    </thead>
+                    <tbody>${scenarioRows}</tbody>
+                </table>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">Theta Decay Schedule — Value Over Time (spot unchanged)</div>
+                <table style="width:100%; font-size:12px; color:#c9d1d9;">
+                    <thead>
+                        <tr style="color:#7d8590; font-size:10px; text-transform:uppercase; border-bottom:2px solid #21262d;">
+                            <th style="padding:8px 12px; text-align:left;">Day</th>
+                            <th style="padding:8px 12px;">DTE Left</th>
+                            <th style="padding:8px 12px;">Contract Value</th>
+                            <th style="padding:8px 12px;">Theta Lost</th>
+                            <th style="padding:8px 12px;">% Remaining</th>
+                        </tr>
+                    </thead>
+                    <tbody>${decayRows}</tbody>
+                </table>
+            </div>
+        `;
+        setStatus('Contract analyzed: ' + d.prob_profit + '% probability of profit');
+    } catch (err) {
+        document.getElementById('contract-result').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
+        setStatus('Error analyzing contract');
+    }
+}
+
+// ===== PORTFOLIO TAB =====
+async function addPosition() {
+    const symbol = document.getElementById('port-symbol').value.trim();
+    const entryPrice = document.getElementById('port-entry').value;
+    const shares = document.getElementById('port-shares').value;
+    const posType = document.getElementById('port-type').value;
+    const targetLow = document.getElementById('port-target-low').value;
+    const targetHigh = document.getElementById('port-target-high').value;
+    const stopLoss = document.getElementById('port-stop').value;
+    const notes = document.getElementById('port-notes').value;
+
+    if (!symbol || !entryPrice || !shares) {
+        alert('Ticker, Entry Price, and Shares are required.');
+        return;
+    }
+
+    try {
+        const body = {
+            symbol: symbol,
+            entry_price: parseFloat(entryPrice),
+            shares: parseFloat(shares),
+            position_type: posType,
+            notes: notes,
+        };
+        if (targetLow) body.target_low = parseFloat(targetLow);
+        if (targetHigh) body.target_high = parseFloat(targetHigh);
+        if (stopLoss) body.stop_loss = parseFloat(stopLoss);
+
+        const res = await fetch('/api/portfolio/add', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        // Clear form
+        document.getElementById('port-symbol').value = '';
+        document.getElementById('port-entry').value = '';
+        document.getElementById('port-shares').value = '';
+        document.getElementById('port-target-low').value = '';
+        document.getElementById('port-target-high').value = '';
+        document.getElementById('port-stop').value = '';
+        document.getElementById('port-notes').value = '';
+
+        setStatus('Added ' + symbol + ' position');
+        loadPortfolio();
+    } catch (err) {
+        alert('Error adding position: ' + err.message);
+    }
+}
+
+async function removePosition(posId) {
+    if (!confirm('Close this position?')) return;
+    try {
+        const res = await fetch('/api/portfolio/remove', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: posId}),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        setStatus('Position closed');
+        loadPortfolio();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function updateAccount() {
+    const size = document.getElementById('port-account').value;
+    if (!size) return;
+    try {
+        const res = await fetch('/api/portfolio/account', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({size: parseFloat(size)}),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        setStatus('Account set to $' + parseFloat(size).toLocaleString());
+        loadPortfolio();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function calcRisk() {
+    const account = document.getElementById('rc-account').value;
+    const entry = document.getElementById('rc-entry').value;
+    const stop = document.getElementById('rc-stop').value;
+    const risk = document.getElementById('rc-risk').value;
+
+    if (!account || !entry || !stop) {
+        alert('All fields required for risk calculation.');
+        return;
+    }
+
+    try {
+        const url = '/api/risk-calc?account=' + account + '&entry=' + entry + '&stop=' + stop + '&risk=' + risk;
+        const res = await fetch(url);
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error);
+
+        document.getElementById('risk-calc-result').style.display = 'block';
+        document.getElementById('risk-calc-result').innerHTML = '<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; text-align:center;">'
+            + '<div class="card" style="padding:16px;">'
+            + '<div style="font-size:10px; color:#3fb950; text-transform:uppercase;">Shares to Buy</div>'
+            + '<div style="font-size:28px; font-weight:800; color:#e6edf3;">' + d.shares + '</div>'
+            + '</div>'
+            + '<div class="card" style="padding:16px;">'
+            + '<div style="font-size:10px; color:#d29922; text-transform:uppercase;">Position Value</div>'
+            + '<div style="font-size:20px; font-weight:700; color:#e6edf3;">$' + d.position_value.toLocaleString() + '</div>'
+            + '<div style="font-size:11px; color:#484f58;">' + d.position_pct + '% of account</div>'
+            + '</div>'
+            + '<div class="card" style="padding:16px;">'
+            + '<div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">Max Loss</div>'
+            + '<div style="font-size:20px; font-weight:700; color:#ff7b72;">$' + d.max_loss.toLocaleString() + '</div>'
+            + '<div style="font-size:11px; color:#484f58;">$' + d.risk_per_share.toFixed(2) + ' risk/share</div>'
+            + '</div>'
+            + '</div>';
+    } catch (err) {
+        document.getElementById('risk-calc-result').style.display = 'block';
+        document.getElementById('risk-calc-result').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
+    }
+}
+
+async function loadPortfolio() {
+    switchTab('portfolio');
+    document.getElementById('portfolio-loading').style.display = 'block';
+    document.getElementById('portfolio-loading').innerHTML = '<div class="spinner"></div><div>Loading portfolio...</div>';
+    document.getElementById('portfolio-content').style.display = 'none';
+    document.getElementById('portfolio-error').style.display = 'none';
+    setStatus('Loading portfolio...');
+
+    try {
+        const res = await fetch('/api/portfolio');
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        // Alerts banner
+        let alertsHtml = '';
+        if (data.alerts.length > 0) {
+            alertsHtml = '<div class="signal-card" style="border:2px solid #da3633; margin-bottom:16px;">'
+                + '<div style="font-size:14px; font-weight:700; color:#ff7b72; margin-bottom:8px;">&#x26A0; Active Alerts</div>';
+            data.alerts.forEach(function(a) {
+                const urgColor = a.urgency === 'critical' ? '#ff7b72' : a.urgency === 'high' ? '#d29922' : '#7d8590';
+                alertsHtml += '<div style="padding:4px 0; font-size:12px; color:' + urgColor + ';">'
+                    + '<strong>' + a.type + '</strong> — ' + a.message + '</div>';
+            });
+            alertsHtml += '</div>';
+        }
+
+        // Account summary
+        const s = data.summary;
+        const a = data.account;
+        const totalPnlColor = s.total_pnl >= 0 ? '#3fb950' : '#ff7b72';
+        const totalPnlSign = s.total_pnl >= 0 ? '+' : '';
+
+        let summaryHtml = '<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; margin-bottom:16px;">'
+            + '<div class="card" style="text-align:center; padding:16px;">'
+            + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Account</div>'
+            + '<div style="font-size:18px; font-weight:700; color:#e6edf3;">$' + a.size.toLocaleString() + '</div>'
+            + '</div>'
+            + '<div class="card" style="text-align:center; padding:16px;">'
+            + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Invested</div>'
+            + '<div style="font-size:18px; font-weight:700; color:#e6edf3;">$' + s.total_invested.toLocaleString() + '</div>'
+            + '<div style="font-size:11px; color:#484f58;">' + a.exposure_pct + '% exposure</div>'
+            + '</div>'
+            + '<div class="card" style="text-align:center; padding:16px;">'
+            + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Current Value</div>'
+            + '<div style="font-size:18px; font-weight:700; color:#e6edf3;">$' + s.total_current.toLocaleString() + '</div>'
+            + '</div>'
+            + '<div class="card" style="text-align:center; padding:16px;">'
+            + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Total P&L</div>'
+            + '<div style="font-size:18px; font-weight:700; color:' + totalPnlColor + ';">' + totalPnlSign + '$' + Math.abs(s.total_pnl).toLocaleString(undefined, {minimumFractionDigits:2}) + '</div>'
+            + '<div style="font-size:11px; color:' + totalPnlColor + ';">' + totalPnlSign + s.total_pnl_pct + '%</div>'
+            + '</div>'
+            + '<div class="card" style="text-align:center; padding:16px;">'
+            + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Available</div>'
+            + '<div style="font-size:18px; font-weight:700; color:#e6edf3;">$' + a.available.toLocaleString() + '</div>'
+            + '</div>'
+            + '</div>';
+
+        // Position rows
+        let posHtml = '';
+        if (data.positions.length === 0) {
+            posHtml = '<div style="text-align:center; padding:40px; color:#484f58;">No open positions. Add one above.</div>';
+        } else {
+            data.positions.forEach(function(p) {
+                const pnlColor = p.pnl >= 0 ? '#3fb950' : '#ff7b72';
+                const pnlSign = p.pnl >= 0 ? '+' : '';
+                const dayColor = p.day_change >= 0 ? '#3fb950' : '#ff7b72';
+                const daySign = p.day_change >= 0 ? '+' : '';
+                const progressColor = p.progress >= 100 ? '#3fb950' : p.progress >= 50 ? '#d29922' : p.progress < 0 ? '#ff7b72' : '#484f58';
+                const progressWidth = Math.max(0, Math.min(100, p.progress));
+
+                let exitBadge = '';
+                if (p.exit_analysis) {
+                    const ec = p.exit_analysis.exit_class;
+                    const eColor = ec === 'exit-now' ? '#ff7b72' : ec === 'exit-position' ? '#f47067' :
+                                   ec === 'tighten-stop' ? '#d29922' : '#3fb950';
+                    exitBadge = '<span style="font-size:9px; font-weight:700; padding:2px 8px; border-radius:3px; background:' + eColor + '22; color:' + eColor + ';">'
+                        + p.exit_analysis.exit_signal + '</span>';
+                }
+
+                posHtml += '<div class="card" style="margin-bottom:12px; padding:20px;">'
+                    + '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">'
+                    + '<div>'
+                    + '<span style="font-size:18px; font-weight:700; color:#e6edf3;">' + p.symbol + '</span>'
+                    + ' <span style="font-size:11px; color:#7d8590; text-transform:uppercase;">' + p.position_type + '</span> '
+                    + exitBadge
+                    + '<div style="font-size:11px; color:#484f58; margin-top:2px;">' + p.shares + ' shares | Entry: $' + p.entry_price.toLocaleString() + ' | ' + p.days_held + ' days held</div>'
+                    + (p.notes ? '<div style="font-size:11px; color:#7d8590; margin-top:2px; font-style:italic;">' + p.notes + '</div>' : '')
+                    + '</div>'
+                    + '<button class="btn" onclick="removePosition(\'' + p.id + '\')" style="font-size:11px; padding:4px 12px;">Close</button>'
+                    + '</div>'
+                    + '<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:16px; text-align:center;">'
+                    + '<div>'
+                    + '<div style="font-size:10px; color:#7d8590;">Current</div>'
+                    + '<div style="font-size:16px; font-weight:600; color:#e6edf3;">$' + p.current_price.toLocaleString() + '</div>'
+                    + '<div style="font-size:11px; color:' + dayColor + ';">' + daySign + p.day_change.toFixed(2) + ' (' + daySign + p.day_change_pct.toFixed(2) + '%)</div>'
+                    + '</div>'
+                    + '<div>'
+                    + '<div style="font-size:10px; color:#7d8590;">P&L</div>'
+                    + '<div style="font-size:16px; font-weight:600; color:' + pnlColor + ';">' + pnlSign + '$' + Math.abs(p.pnl).toLocaleString(undefined, {minimumFractionDigits:2}) + '</div>'
+                    + '<div style="font-size:11px; color:' + pnlColor + ';">' + pnlSign + p.pnl_pct.toFixed(2) + '%</div>'
+                    + '</div>'
+                    + '<div>'
+                    + '<div style="font-size:10px; color:#ff7b72;">Stop</div>'
+                    + '<div style="font-size:14px; font-weight:600; color:#ff7b72;">$' + p.stop_loss.toLocaleString() + '</div>'
+                    + '</div>'
+                    + '<div>'
+                    + '<div style="font-size:10px; color:#3fb950;">Target</div>'
+                    + '<div style="font-size:14px; font-weight:600; color:#3fb950;">$' + p.target_low.toLocaleString() + ' – $' + p.target_high.toLocaleString() + '</div>'
+                    + '</div>'
+                    + '</div>'
+                    + '<div style="margin-top:12px;">'
+                    + '<div style="display:flex; justify-content:space-between; font-size:10px; color:#484f58; margin-bottom:4px;">'
+                    + '<span>Stop $' + p.stop_loss.toLocaleString() + '</span>'
+                    + '<span>Progress: ' + p.progress.toFixed(0) + '%</span>'
+                    + '<span>Target $' + p.target_high.toLocaleString() + '</span>'
+                    + '</div>'
+                    + '<div style="height:6px; background:#21262d; border-radius:3px; overflow:hidden;">'
+                    + '<div style="height:100%; width:' + progressWidth + '%; background:' + progressColor + '; border-radius:3px; transition:width 0.5s;"></div>'
+                    + '</div>'
+                    + '</div>'
+                    + '</div>';
+            });
+        }
+
+        document.getElementById('portfolio-content').innerHTML = alertsHtml + summaryHtml + posHtml;
+        document.getElementById('portfolio-loading').style.display = 'none';
+        document.getElementById('portfolio-content').style.display = 'block';
+        setStatus('Portfolio: ' + data.positions.length + ' positions | ' + totalPnlSign + '$' + Math.abs(s.total_pnl).toFixed(2));
+    } catch (err) {
+        document.getElementById('portfolio-loading').style.display = 'none';
+        document.getElementById('portfolio-error').style.display = 'block';
+        document.getElementById('portfolio-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
+        setStatus('Error loading portfolio');
+    }
+}
+</script>
+
+</body>
+</html>

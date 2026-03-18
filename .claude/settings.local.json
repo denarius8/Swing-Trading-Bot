@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 bot.py --train)",
+      "Bash(python3 bot.py --backtest)",
+      "Bash(python3 bot.py)",
+      "Bash(python3 -m pip install flask)",
+      "Bash(python3 -c \"import flask; print\\(flask.__version__\\)\")",
+      "Bash(timeout 8 python3 app.py)",
+      "Bash(python3 app.py)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5050)",
+      "Bash(python3 -m pip install scipy)",
+      "Bash(python3 -c \":*)",
+      "Bash(lsof -ti:5050)",
+      "Bash(curl -s http://localhost:5050/api/confluence)",
+      "Bash(curl -s http://localhost:5050/api/scan --max-time 180)",
+      "Bash(curl -s \"http://localhost:5050/api/exit?symbol=^GSPC&type=short&entry=6800\")",
+      "Bash(python3 -c \"from options_analyzer import analyze_spx_options; print\\(''''options_analyzer OK''''\\)\")",
+      "Bash(python3 -c \"from portfolio import add_position, get_portfolio_status; print\\(''''portfolio OK''''\\)\")",
+      "Bash(python3 -c \"from scipy.stats import norm; print\\(''''scipy OK''''\\)\")",
+      "Bash(curl -s -X POST http://localhost:5050/api/portfolio/add -H \"Content-Type: application/json\" -d '{\"\"\"\"symbol\"\"\"\":\"\"\"\"PEP\"\"\"\",\"\"\"\"entry_price\"\"\"\":147.97,\"\"\"\"shares\"\"\"\":300,\"\"\"\"position_type\"\"\"\":\"\"\"\"long\"\"\"\",\"\"\"\"target_low\"\"\"\":183,\"\"\"\"target_high\"\"\"\":197,\"\"\"\"stop_loss\"\"\"\":140,\"\"\"\"notes\"\"\"\":\"\"\"\"Long-term swing, targeting $183-197 exit zone\"\"\"\"}')",
+      "Bash(curl -s \"http://localhost:5050/api/options/contract?strike=6750&expiration=2026-03-20&type=call&premium=28.00&contracts=1&target=56\")",
+      "Bash(curl -s \"http://localhost:5050/api/options/contract?strike=6400&expiration=2026-03-27&type=put&premium=18.80&contracts=2\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s \"http://localhost:5050/api/options/contract?strike=6400&expiration=2026-03-27&type=put&premium=18.80&contracts=2&current_price=21.50\")"
+    ]
+  }
+}

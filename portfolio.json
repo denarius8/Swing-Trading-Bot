@@ -1,0 +1,20 @@
+{
+  "positions": [
+    {
+      "id": "PEP_20260317123518",
+      "symbol": "PEP",
+      "entry_price": 147.97,
+      "shares": 300.0,
+      "total_cost": 44391.0,
+      "position_type": "long",
+      "target_low": 183.0,
+      "target_high": 197.0,
+      "stop_loss": 140.0,
+      "notes": "Long-term swing, targeting $183-197 exit zone",
+      "entry_date": "2026-03-17",
+      "status": "open"
+    }
+  ],
+  "closed": [],
+  "account_size": 10000
+}
