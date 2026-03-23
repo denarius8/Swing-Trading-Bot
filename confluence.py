@@ -670,3 +670,26 @@ def scan_watchlist(symbols=None):
 
     results.sort(key=sort_key)
     return results
+
+
+def analyze_ticker_with_confidence(symbol):
+    """Full confluence analysis + confidence overlay from leading indicators."""
+    result = analyze_ticker(symbol)
+    if result is None:
+        return None
+
+    try:
+        from confidence import assess_confidence
+        result["confidence"] = assess_confidence(result)
+    except Exception as e:
+        result["confidence"] = {
+            "grade": "UNKNOWN",
+            "grade_class": "neutral",
+            "supporting": 0,
+            "conflicting": 0,
+            "neutral": 0,
+            "warnings": [f"Confidence check failed: {str(e)}"],
+            "details": {},
+        }
+
+    return result

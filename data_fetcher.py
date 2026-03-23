@@ -25,7 +25,35 @@ def _cache_is_fresh():
     with open(meta) as f:
         info = json.load(f)
     fetched = datetime.fromisoformat(info["fetched_at"])
-    return (datetime.now() - fetched).total_seconds() < config.CACHE_EXPIRY_HOURS * 3600
+
+    # Check if cache includes the most recent trading day's close
+    # If it's after 4:30pm ET on a weekday and cache was fetched before today, it's stale
+    now = datetime.now()
+    age_hours = (now - fetched).total_seconds() / 3600
+
+    # Always stale if older than cache expiry
+    if age_hours > config.CACHE_EXPIRY_HOURS:
+        return False
+
+    # Check if a new trading day has closed since cache was fetched
+    # Load cached data to check the last date
+    cache = _cache_path()
+    if os.path.exists(cache):
+        try:
+            df = pd.read_csv(cache, index_col=0, parse_dates=True)
+            last_cached_date = df.index[-1].date()
+            # Fetch minimal fresh data to see if there's a newer close
+            fresh = yf.Ticker(config.TICKER).history(period="5d")
+            if not fresh.empty:
+                latest_date = fresh.index[-1]
+                if hasattr(latest_date, 'tz') and latest_date.tz:
+                    latest_date = latest_date.tz_localize(None) if hasattr(latest_date, 'tz_localize') else latest_date.replace(tzinfo=None)
+                if latest_date.date() > last_cached_date:
+                    return False  # New trading day available
+        except Exception:
+            pass
+
+    return True
 
 
 def fetch_spx_data(force_refresh=False):

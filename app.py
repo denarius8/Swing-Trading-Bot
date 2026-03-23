@@ -27,7 +27,7 @@ from model import train_model, predict_next_day, load_model, prepare_data
 from data_fetcher import fetch_spx_data
 from indicators import add_all_features, get_feature_columns
 from gex import fetch_gex_data
-from confluence import analyze_ticker, analyze_exit, scan_watchlist, DEFAULT_WATCHLIST
+from confluence import analyze_ticker, analyze_ticker_with_confidence, analyze_exit, scan_watchlist, DEFAULT_WATCHLIST
 from options_analyzer import analyze_spx_options, analyze_contract
 from portfolio import (add_position, remove_position, get_portfolio_status,
                        update_account_size, calculate_position_size)
@@ -275,7 +275,7 @@ def api_gex():
 def api_confluence():
     try:
         symbol = "^GSPC"  # SPX
-        result = analyze_ticker(symbol)
+        result = analyze_ticker_with_confidence(symbol)
         if result is None:
             return jsonify({"success": False, "error": "Could not fetch SPX data"})
 
@@ -364,7 +364,23 @@ def api_confluence():
         }
         if live:
             resp["live"] = live
+        if result.get("confidence"):
+            resp["confidence"] = result["confidence"]
         return jsonify(resp)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
+
+
+@app.route("/api/confidence")
+def api_confidence():
+    try:
+        result = analyze_ticker("^GSPC")
+        if result is None:
+            return jsonify({"success": False, "error": "Could not fetch SPX data"})
+        from confidence import assess_confidence
+        conf = assess_confidence(result)
+        conf["success"] = True
+        return jsonify(conf)
     except Exception as e:
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
 

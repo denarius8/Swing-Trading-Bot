@@ -158,10 +158,11 @@ def load_model():
 
 
 def predict_next_day():
-    """Generate prediction for the next trading day."""
+    """Generate prediction for the next trading day using latest data."""
     model, scaler, feature_cols = load_model()
 
-    raw_df = fetch_spx_data()
+    # Always fetch fresh data for predictions to ensure we use the latest close
+    raw_df = fetch_spx_data(force_refresh=True)
     df = add_all_features(raw_df)
     df = df.dropna()
 
