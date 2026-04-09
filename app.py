@@ -31,6 +31,10 @@ from confluence import analyze_ticker, analyze_ticker_with_confidence, analyze_e
 from options_analyzer import analyze_spx_options, analyze_contract
 from portfolio import (add_position, remove_position, get_portfolio_status,
                        update_account_size, calculate_position_size)
+from net_premium import (auto_update_today, get_premium_table, update_manual_premium,
+                         fetch_net_premium_signal)
+from patterns import scan_universe, scan_patterns, PATTERN_REGISTRY
+from universe import get_universe, get_universe_info
 import yfinance as yf
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -721,6 +725,85 @@ def api_live():
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
+
+@app.route("/api/patterns")
+def api_patterns():
+    try:
+        from flask import request
+        custom = request.args.get("tickers", None)
+        mode = request.args.get("mode", "default")
+        min_grade = request.args.get("min_grade", "B")
+        pattern_filter = request.args.get("patterns", None)
+
+        if custom:
+            symbols = [t.strip().upper() for t in custom.split(",") if t.strip()]
+        else:
+            symbols = get_universe(mode)
+
+        patterns = None
+        if pattern_filter:
+            pattern_names = [p.strip() for p in pattern_filter.split(",")]
+            patterns = {k: v for k, v in PATTERN_REGISTRY.items() if k in pattern_names}
+
+        results = scan_universe(symbols, patterns=patterns, min_grade=min_grade)
+
+        return jsonify({
+            "success": True,
+            "results": results,
+            "total_scanned": len(symbols),
+            "patterns_found": len(results),
+            "available_patterns": list(PATTERN_REGISTRY.keys()),
+            "universe_info": get_universe_info(),
+            "timestamp": datetime.now().strftime("%H:%M:%S"),
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
+
+
+@app.route("/api/net-premium")
+def api_net_premium():
+    try:
+        # Auto-calculate today's net premium and save
+        today_result = auto_update_today()
+
+        # Get historical table
+        table = get_premium_table(days=20)
+
+        return jsonify({
+            "success": True,
+            "today": today_result.get("calculation") if today_result else None,
+            "table": table,
+            "signal": fetch_net_premium_signal(),
+            "timestamp": datetime.now().strftime("%H:%M:%S"),
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
+
+
+@app.route("/api/net-premium/update", methods=["POST"])
+def api_net_premium_update():
+    try:
+        from flask import request
+        data = request.get_json() if request.is_json else {}
+        if not data:
+            data = request.args.to_dict()
+
+        date_str = data.get("date", datetime.now().strftime("%Y-%m-%d"))
+        net_premium = data.get("net_premium")
+        total_premium = data.get("total_premium")
+
+        if net_premium is None:
+            return jsonify({"success": False, "error": "net_premium value required"})
+
+        net_premium = float(str(net_premium).replace(",", "").replace("$", ""))
+        if total_premium:
+            total_premium = float(str(total_premium).replace(",", "").replace("$", ""))
+
+        entry = update_manual_premium(date_str, net_premium, total_premium)
+        return jsonify({"success": True, "entry": entry})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
 
 
 if __name__ == "__main__":

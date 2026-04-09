@@ -444,14 +444,16 @@ def fetch_multi_timeframe_signals():
         "warning": None,
     }
 
+    # (label, symbol, interval, period, weight)
+    # Weekly 3x, Daily 2x, 4-Hour 1x, 90-Min 1x — higher timeframes dominate
     timeframe_configs = [
-        ("Weekly", "^GSPC", "1wk", "6mo"),
-        ("Daily", "^GSPC", "1d", "3mo"),
-        ("4-Hour", "^GSPC", "60m", "5d"),    # Aggregate 60m into 4h
-        ("90-Min", "^GSPC", "90m", "5d"),
+        ("Weekly", "^GSPC", "1wk", "6mo", 3),
+        ("Daily", "^GSPC", "1d", "3mo", 2),
+        ("4-Hour", "^GSPC", "60m", "5d", 1),    # Aggregate 60m into 4h
+        ("90-Min", "^GSPC", "90m", "5d", 1),
     ]
 
-    for label, symbol, interval, period in timeframe_configs:
+    for label, symbol, interval, period, weight in timeframe_configs:
         try:
             tk = yf.Ticker(symbol)
             df = tk.history(period=period, interval=interval)
@@ -471,24 +473,32 @@ def fetch_multi_timeframe_signals():
                 df = df_4h
 
             tf_result = _score_ha_timeframe(df, label)
+            tf_result["weight"] = weight
             result["timeframes"][label] = tf_result
 
         except Exception:
             continue
 
-    # Calculate alignment
-    signals = [tf["signal"] for tf in result["timeframes"].values() if tf["signal"] != 0]
+    # Calculate weighted alignment
+    # Weekly=3x, Daily=2x, 4-Hour=1x, 90-Min=1x (total possible = 7)
     result["total_timeframes"] = len(result["timeframes"])
+    total_weight = sum(tf.get("weight", 1) for tf in result["timeframes"].values())
 
-    if signals:
-        bull_count = sum(1 for s in signals if s == 1)
-        bear_count = sum(1 for s in signals if s == -1)
-        result["alignment"] = max(bull_count, bear_count)
+    bull_weight = sum(tf.get("weight", 1) for tf in result["timeframes"].values() if tf["signal"] == 1)
+    bear_weight = sum(tf.get("weight", 1) for tf in result["timeframes"].values() if tf["signal"] == -1)
+    bull_count = sum(1 for tf in result["timeframes"].values() if tf["signal"] == 1)
+    bear_count = sum(1 for tf in result["timeframes"].values() if tf["signal"] == -1)
 
-        if bull_count > bear_count:
+    result["bull_weight"] = bull_weight
+    result["bear_weight"] = bear_weight
+    result["total_weight"] = total_weight
+    result["alignment"] = max(bull_count, bear_count)
+
+    if bull_weight > 0 or bear_weight > 0:
+        if bull_weight > bear_weight:
             result["dominant_trend"] = "BULLISH"
             result["signal"] = 1
-        elif bear_count > bull_count:
+        elif bear_weight > bull_weight:
             result["dominant_trend"] = "BEARISH"
             result["signal"] = -1
         else:
@@ -517,6 +527,13 @@ def assess_confidence(confluence_result):
     """
     direction = confluence_result.get("signal", "NO SIGNAL")
 
+    # Import net premium signal
+    try:
+        from net_premium import fetch_net_premium_signal
+        net_prem = fetch_net_premium_signal()
+    except Exception:
+        net_prem = {"signal": 0, "label": "Unavailable", "detail": "Could not load net premium data"}
+
     if direction == "ENTER LONG":
         expected_sign = 1
     elif direction == "ENTER SHORT":
@@ -539,6 +556,7 @@ def assess_confidence(confluence_result):
                 "crude": crude,
                 "positioning": positioning,
                 "multi_timeframe": mtf,
+                "net_premium": net_prem,
             },
         })
 
@@ -554,6 +572,7 @@ def assess_confidence(confluence_result):
         ("Crude Oil", crude),
         ("Dealer Positioning", positioning),
         ("Multi-Timeframe", mtf),
+        ("Net Premium Flow", net_prem),
     ]
 
     conflicts = 0
@@ -578,6 +597,9 @@ def assess_confidence(confluence_result):
             elif name == "Multi-Timeframe":
                 dom = mtf.get("dominant_trend", "UNKNOWN")
                 warnings.append(f"Multi-timeframe trend is {dom} — conflicts with {direction}")
+            elif name == "Net Premium Flow":
+                np_dir = net_prem.get("streak_direction", "unknown")
+                warnings.append(f"Net premium flow is {np_dir} — conflicts with {direction}")
         elif sig == expected_sign:
             supporting += 1
         else:
@@ -619,5 +641,6 @@ def assess_confidence(confluence_result):
             "crude": crude,
             "positioning": positioning,
             "multi_timeframe": mtf,
+            "net_premium": net_prem,
         },
     })

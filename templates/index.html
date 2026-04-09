@@ -1002,6 +1002,7 @@
         <button class="tab" onclick="switchTab('options')">SPX Options</button>
         <button class="tab" onclick="switchTab('portfolio')">Portfolio</button>
         <button class="tab" onclick="switchTab('scanner')">Scanner</button>
+        <button class="tab" onclick="switchTab('patterns')">Patterns</button>
         <button class="tab" onclick="switchTab('signal')">ML Signal</button>
         <button class="tab" onclick="switchTab('gex')">GEX</button>
         <button class="tab" onclick="switchTab('backtest')">Backtest</button>
@@ -1224,6 +1225,42 @@
         <div id="scanner-error" style="display:none;"></div>
     </div>
 
+    <div id="patterns-tab" class="tab-content">
+        <div class="exit-form">
+            <div class="exit-form-title">Chart Pattern Scanner</div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <select id="pattern-mode" style="background:#0d1117; border:1px solid #30363d; color:#e6edf3; padding:8px; border-radius:6px; font-size:13px;">
+                    <option value="default">Default Watchlist (38)</option>
+                    <option value="popular">Popular Trading (70+)</option>
+                    <option value="sp500">S&P 500 (500+)</option>
+                    <option value="full">Full Universe (570+)</option>
+                </select>
+                <select id="pattern-filter" style="background:#0d1117; border:1px solid #30363d; color:#e6edf3; padding:8px; border-radius:6px; font-size:13px;">
+                    <option value="">All Patterns</option>
+                    <option value="VCP">VCP</option>
+                    <option value="Bull Flag">Bull Flag</option>
+                    <option value="New Uptrend">New Uptrend</option>
+                    <option value="Golden Pocket">Golden Pocket (.618)</option>
+                    <option value="Livermore Breakout">Livermore Breakout</option>
+                </select>
+                <select id="pattern-min-grade" style="background:#0d1117; border:1px solid #30363d; color:#e6edf3; padding:8px; border-radius:6px; font-size:13px;">
+                    <option value="B">Min Grade: B</option>
+                    <option value="B+">Min Grade: B+</option>
+                    <option value="A">Min Grade: A</option>
+                    <option value="A+">Min Grade: A+ Only</option>
+                </select>
+                <input type="text" id="pattern-custom-tickers" placeholder="Custom: AAPL, TSLA, NVDA" style="background:#0d1117; border:1px solid #30363d; color:#e6edf3; padding:8px; border-radius:6px; font-size:13px; width:220px;">
+                <button class="btn primary" onclick="loadPatterns()">Scan Patterns</button>
+            </div>
+        </div>
+        <div id="patterns-loading" class="loading" style="display:none;">
+            <div class="spinner"></div>
+            <div>Scanning for chart patterns...</div>
+        </div>
+        <div id="patterns-content" style="display:none;"></div>
+        <div id="patterns-error" style="display:none;"></div>
+    </div>
+
     <div id="signal-tab" class="tab-content">
         <div id="signal-loading" class="loading">
             <div class="spinner"></div>
@@ -1328,7 +1365,7 @@ function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
 
-    const tabMap = { confluence: 0, options: 1, portfolio: 2, scanner: 3, signal: 4, gex: 5, backtest: 6 };
+    const tabMap = { confluence: 0, options: 1, portfolio: 2, scanner: 3, patterns: 4, signal: 5, gex: 6, backtest: 7 };
     document.querySelectorAll('.tab')[tabMap[tab]].classList.add('active');
     document.getElementById(tab + '-tab').classList.add('active');
 }
@@ -1812,14 +1849,32 @@ function buildConfidenceDetails(details) {
     const mtfSignalLabel = mtf.signal === 1 ? 'BULLISH' : (mtf.signal === -1 ? 'BEARISH' : 'NEUTRAL');
     html += '<div class="confidence-detail-card">';
     html += '<div class="confidence-detail-title">4. Multi-Timeframe Heikin-Ashi <span style="color:' + mtfSignalColor + '; font-size:11px; margin-left:8px;">' + mtfSignalLabel + '</span></div>';
-    if (mtf.dominant_trend) html += '<div class="confidence-detail-row"><span>Dominant Trend</span><span class="value ha-trend-' + mtf.dominant_trend.toLowerCase() + '">' + mtf.dominant_trend + '</span></div>';
-    html += '<div class="confidence-detail-row"><span>Alignment</span><span class="value">' + (mtf.alignment || 0) + '/' + (mtf.total_timeframes || 0) + ' timeframes agree</span></div>';
+    if (mtf.dominant_trend) html += '<div class="confidence-detail-row"><span>Dominant Trend (weighted)</span><span class="value ha-trend-' + mtf.dominant_trend.toLowerCase() + '">' + mtf.dominant_trend + '</span></div>';
+    html += '<div class="confidence-detail-row"><span>Weighted Score</span><span class="value"><span style="color:#3fb950;">' + (mtf.bull_weight || 0) + '</span> bull / <span style="color:#ff7b72;">' + (mtf.bear_weight || 0) + '</span> bear (of ' + (mtf.total_weight || 0) + ' max)</span></div>';
     if (mtf.timeframes) {
         Object.entries(mtf.timeframes).forEach(([label, tf]) => {
             const tfColor = tf.trend.includes('BULLISH') ? '#3fb950' : (tf.trend.includes('BEARISH') ? '#ff7b72' : '#7d8590');
             const streakText = tf.ha_streak > 0 ? tf.ha_streak + ' green' : (tf.ha_streak < 0 ? Math.abs(tf.ha_streak) + ' red' : '0');
-            html += '<div class="confidence-detail-row"><span>' + label + '</span><span style="color:' + tfColor + '">' + tf.trend + ' (' + streakText + ' HA candles' + (tf.vol_confirm ? ', vol confirmed' : '') + ')</span></div>';
+            const weightLabel = tf.weight ? ' [' + tf.weight + 'x]' : '';
+            html += '<div class="confidence-detail-row"><span>' + label + weightLabel + '</span><span style="color:' + tfColor + '">' + tf.trend + ' (' + streakText + ' HA candles' + (tf.vol_confirm ? ', vol confirmed' : '') + ')</span></div>';
         });
+    }
+    html += '</div>';
+
+    // Net Premium Flow
+    const np = details.net_premium || {};
+    const npSignalColor = np.signal === 1 ? '#3fb950' : (np.signal === -1 ? '#ff7b72' : '#7d8590');
+    const npSignalLabel = np.signal === 1 ? 'BULLISH' : (np.signal === -1 ? 'BEARISH' : 'NEUTRAL');
+    html += '<div class="confidence-detail-card">';
+    html += '<div class="confidence-detail-title">5. Net Premium Flow <span style="color:' + npSignalColor + '; font-size:11px; margin-left:8px;">' + npSignalLabel + '</span>';
+    if (np.latest_source === 'manual') html += ' <span style="background:#d29922; color:#0a0e17; padding:1px 6px; border-radius:3px; font-size:9px; font-weight:700; margin-left:4px;">UW DATA</span>';
+    html += '</div>';
+    html += '<div class="confidence-detail-row"><span>Signal</span><span class="value">' + (np.label || 'N/A') + '</span></div>';
+    html += '<div class="confidence-detail-row"><span>Detail</span><span class="value">' + (np.detail || 'N/A') + '</span></div>';
+    if (np.streak > 0) html += '<div class="confidence-detail-row"><span>Streak</span><span class="value" style="color:' + (np.streak_direction === 'positive' ? '#3fb950' : '#ff7b72') + '">' + np.streak + ' days ' + np.streak_direction + '</span></div>';
+    if (np.latest_net_premium != null) {
+        const lnpColor = np.latest_net_premium > 0 ? '#3fb950' : '#ff7b72';
+        html += '<div class="confidence-detail-row"><span>Latest Net Premium</span><span class="value" style="color:' + lnpColor + '">' + (np.latest_net_premium > 0 ? '+' : '') + '$' + Math.abs(np.latest_net_premium).toLocaleString() + '</span></div>';
     }
     html += '</div>';
 
@@ -1944,6 +1999,8 @@ async function loadConfluence() {
 
             ${data.confidence && data.confidence.details ? buildConfidenceDetails(data.confidence.details) : ''}
 
+            <div id="net-premium-section"></div>
+
             <div class="card" style="margin-top:24px;">
                 <div class="card-title">10 Confluence Indicators</div>
                 ${indicatorRows}
@@ -1965,11 +2022,114 @@ async function loadConfluence() {
         document.getElementById('confluence-loading').style.display = 'none';
         document.getElementById('confluence-content').style.display = 'block';
         setStatus('Confluence: ' + data.signal + ' (' + data.strength + '/10)');
+
+        // Load net premium data asynchronously
+        loadNetPremium();
     } catch (err) {
         document.getElementById('confluence-loading').style.display = 'none';
         document.getElementById('confluence-error').style.display = 'block';
         document.getElementById('confluence-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
         setStatus('Error loading confluence');
+    }
+}
+
+async function loadNetPremium() {
+    const section = document.getElementById('net-premium-section');
+    if (!section) return;
+    section.innerHTML = '<div class="card" style="margin-top:24px;"><div class="card-title">SPX Net Premium Flow</div><div style="padding:16px; text-align:center; color:#7d8590;"><div class="spinner" style="margin:0 auto 8px;"></div>Loading net premium data...</div></div>';
+
+    try {
+        const res = await fetch('/api/net-premium');
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        const table = data.table;
+        const signal = data.signal;
+
+        // Streak banner
+        const streakColor = table.streak_direction === 'positive' ? '#3fb950' : table.streak_direction === 'negative' ? '#ff7b72' : '#7d8590';
+        const streakText = table.streak > 0 ? table.streak + ' days of ' + table.streak_direction + ' net prems' : 'No clear streak';
+
+        // Signal badge
+        let signalBadge = '';
+        if (signal && signal.signal !== 0) {
+            const sigColor = signal.signal === 1 ? '#3fb950' : '#ff7b72';
+            signalBadge = '<span style="background:' + sigColor + '22; color:' + sigColor + '; padding:2px 8px; border-radius:4px; font-size:11px; margin-left:8px;">' + signal.label + '</span>';
+        }
+
+        // Build table rows
+        let rows = '';
+        table.history.forEach(function(h) {
+            const changeColor = h.change_pct >= 0 ? '#3fb950' : '#ff7b72';
+            const changeSign = h.change_pct >= 0 ? '+' : '';
+            const npColor = h.net_premium > 0 ? '#3fb950' : h.net_premium < 0 ? '#ff7b72' : '#7d8590';
+            const npFormatted = h.net_premium != null ? (h.net_premium > 0 ? '+' : '') + '$' + Math.abs(h.net_premium).toLocaleString() : '-';
+            const tpFormatted = h.total_premium != null ? '$' + h.total_premium.toLocaleString() : '-';
+            const sourceBadge = h.source === 'manual'
+                ? '<span style="background:#d29922; color:#0a0e17; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:700; margin-left:4px;">UW</span>'
+                : '<span style="background:#30363d; color:#7d8590; padding:1px 4px; border-radius:3px; font-size:9px; margin-left:4px;">AUTO</span>';
+
+            rows += '<div style="display:grid; grid-template-columns:80px 90px 90px 80px 150px 140px; gap:8px; padding:8px 16px; border-bottom:1px solid #21262d; font-size:12px; align-items:center;">'
+                + '<div style="color:#e6edf3;">' + h.date.substring(5) + '</div>'
+                + '<div style="color:#e6edf3;">' + (h.open != null ? '$' + h.open.toLocaleString() : '-') + '</div>'
+                + '<div style="color:#e6edf3;">' + (h.close != null ? '$' + h.close.toLocaleString() : '-') + '</div>'
+                + '<div style="color:' + changeColor + ';">' + (h.change_pct != null ? changeSign + h.change_pct + '%' : '-') + '</div>'
+                + '<div style="color:' + npColor + '; font-weight:600;">' + npFormatted + sourceBadge + '</div>'
+                + '<div style="color:#7d8590;">' + tpFormatted + '</div>'
+                + '</div>';
+        });
+
+        // Manual override form
+        const todayStr = new Date().toISOString().split('T')[0];
+        const overrideForm = '<div style="display:flex; gap:8px; align-items:center; padding:12px 16px; background:#0d1117; border-radius:0 0 10px 10px; border-top:1px solid #21262d;">'
+            + '<span style="font-size:11px; color:#7d8590;">Update from UW:</span>'
+            + '<input type="date" id="np-date" value="' + todayStr + '" style="background:#0d1117; border:1px solid #30363d; color:#e6edf3; padding:4px 8px; border-radius:4px; font-size:11px;">'
+            + '<input type="text" id="np-value" placeholder="Net Premium (e.g. 899201286)" style="background:#0d1117; border:1px solid #30363d; color:#e6edf3; padding:4px 8px; border-radius:4px; font-size:11px; width:180px;">'
+            + '<input type="text" id="np-total" placeholder="Total Premium (optional)" style="background:#0d1117; border:1px solid #30363d; color:#e6edf3; padding:4px 8px; border-radius:4px; font-size:11px; width:180px;">'
+            + '<button onclick="submitNetPremium()" style="background:#d29922; color:#0a0e17; border:none; padding:4px 12px; border-radius:4px; font-size:11px; font-weight:700; cursor:pointer;">Save UW Data</button>'
+            + '</div>';
+
+        section.innerHTML = '<div class="card" style="margin-top:24px;">'
+            + '<div class="card-title" style="display:flex; align-items:center; justify-content:space-between;">'
+            + '<span>SPX Net Premium Flow</span>'
+            + '<span style="color:' + streakColor + '; font-size:13px; font-weight:600;">' + streakText + signalBadge + '</span>'
+            + '</div>'
+            + '<div style="padding:4px 0;">'
+            + '<div style="display:grid; grid-template-columns:80px 90px 90px 80px 150px 140px; gap:8px; padding:8px 16px; font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #30363d;">'
+            + '<div>Date</div><div>Open</div><div>Close</div><div>% Change</div><div>Net Prem</div><div>Total Prem</div>'
+            + '</div>'
+            + rows
+            + '</div>'
+            + overrideForm
+            + '</div>';
+    } catch (err) {
+        section.innerHTML = '<div class="card" style="margin-top:24px;"><div class="card-title">SPX Net Premium Flow</div><div style="padding:16px; color:#ff7b72; font-size:12px;">Error loading net premium: ' + err.message + '</div></div>';
+    }
+}
+
+async function submitNetPremium() {
+    const date = document.getElementById('np-date').value;
+    const value = document.getElementById('np-value').value.trim();
+    const total = document.getElementById('np-total').value.trim();
+
+    if (!value) { alert('Enter the net premium value from Unusual Whales'); return; }
+
+    try {
+        const body = { date: date, net_premium: value };
+        if (total) body.total_premium = total;
+
+        const res = await fetch('/api/net-premium/update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        // Refresh the net premium table
+        loadNetPremium();
+    } catch (err) {
+        alert('Error saving: ' + err.message);
     }
 }
 
@@ -2258,6 +2418,111 @@ async function retrainModel() {
             btn.disabled = false;
         }, 3000);
     }
+}
+
+// ===== PATTERNS TAB =====
+async function loadPatterns() {
+    switchTab('patterns');
+    document.getElementById('patterns-loading').style.display = 'block';
+    document.getElementById('patterns-loading').innerHTML = '<div class="spinner"></div><div>Scanning for chart patterns... This may take a moment.</div>';
+    document.getElementById('patterns-content').style.display = 'none';
+    document.getElementById('patterns-error').style.display = 'none';
+    setStatus('Scanning for patterns...');
+
+    try {
+        const mode = document.getElementById('pattern-mode').value;
+        const filter = document.getElementById('pattern-filter').value;
+        const minGrade = document.getElementById('pattern-min-grade').value;
+        const customInput = document.getElementById('pattern-custom-tickers').value.trim();
+
+        let url = '/api/patterns?mode=' + mode + '&min_grade=' + encodeURIComponent(minGrade);
+        if (customInput) {
+            const tickers = customInput.toUpperCase().split(',').map(t => t.trim()).join(',');
+            url = '/api/patterns?tickers=' + encodeURIComponent(tickers) + '&min_grade=' + encodeURIComponent(minGrade);
+        }
+        if (filter) url += '&patterns=' + encodeURIComponent(filter);
+
+        const res = await fetch(url, { signal: AbortSignal.timeout(300000) });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        // Summary
+        const gradeColors = {'A+': '#3fb950', 'A': '#3fb950', 'B+': '#d29922', 'B': '#7d8590'};
+
+        let summaryHtml = '<div class="card" style="margin-bottom:16px;">'
+            + '<div class="card-title">Scan Results</div>'
+            + '<div style="display:flex; gap:24px; padding:12px 16px; flex-wrap:wrap;">'
+            + '<div><span style="color:#7d8590;">Scanned:</span> <strong style="color:#e6edf3;">' + data.total_scanned + ' tickers</strong></div>'
+            + '<div><span style="color:#7d8590;">Patterns Found:</span> <strong style="color:' + (data.patterns_found > 0 ? '#3fb950' : '#7d8590') + ';">' + data.patterns_found + '</strong></div>'
+            + '<div><span style="color:#7d8590;">Time:</span> <strong style="color:#e6edf3;">' + data.timestamp + '</strong></div>'
+            + '</div></div>';
+
+        if (data.patterns_found === 0) {
+            document.getElementById('patterns-content').innerHTML = summaryHtml
+                + '<div class="card"><div style="padding:32px; text-align:center; color:#7d8590;">No patterns detected matching your criteria. Try a larger universe or lower the minimum grade.</div></div>';
+            document.getElementById('patterns-loading').style.display = 'none';
+            document.getElementById('patterns-content').style.display = 'block';
+            setStatus('Patterns: 0 found');
+            return;
+        }
+
+        // Results table
+        let rows = '';
+        data.results.forEach(function(r, idx) {
+            const gradeColor = gradeColors[r.grade] || '#7d8590';
+            const dirColor = r.direction === 'LONG' ? '#3fb950' : '#ff7b72';
+            const entryStr = r.entry_zone ? '$' + r.entry_zone[0] + ' - $' + r.entry_zone[1] : '-';
+            const details = r.details || {};
+
+            // Detail keys for expandable panel
+            let detailRows = '';
+            Object.entries(details).forEach(([key, val]) => {
+                const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                let display = val;
+                if (typeof val === 'boolean') display = val ? 'Yes' : 'No';
+                else if (typeof val === 'number') display = val.toLocaleString();
+                detailRows += '<div class="confidence-detail-row"><span>' + label + '</span><span class="value">' + display + '</span></div>';
+            });
+
+            rows += '<div class="scan-ticker-row" style="grid-template-columns:80px 150px 50px 60px 140px 80px 80px 60px; cursor:pointer;" onclick="togglePatternDetail(' + idx + ')">'
+                + '<div style="font-weight:700; color:#e6edf3;">' + r.symbol + '</div>'
+                + '<div style="color:#8b949e;">' + r.pattern + '</div>'
+                + '<div style="color:' + gradeColor + '; font-weight:700;">' + r.grade + '</div>'
+                + '<div style="color:' + dirColor + '; font-size:11px;">' + r.direction + '</div>'
+                + '<div style="font-size:11px; color:#e6edf3;">' + entryStr + '</div>'
+                + '<div style="font-size:11px; color:#ff7b72;">$' + (r.stop_loss || '-') + '</div>'
+                + '<div style="font-size:11px; color:#3fb950;">$' + (r.target || '-') + '</div>'
+                + '<div style="font-size:11px; color:' + (r.risk_reward >= 2 ? '#3fb950' : r.risk_reward >= 1 ? '#d29922' : '#ff7b72') + ';">' + (r.risk_reward || 0) + ':1</div>'
+                + '</div>'
+                + '<div id="pattern-detail-' + idx + '" class="scan-detail-panel" style="display:none;">'
+                + '<div style="padding:12px 16px;">'
+                + '<div style="font-size:12px; color:#e6edf3; margin-bottom:8px; font-weight:600;">' + r.pattern + ' — ' + r.symbol + ' @ $' + r.price + '</div>'
+                + detailRows
+                + '</div></div>';
+        });
+
+        document.getElementById('patterns-content').innerHTML = summaryHtml
+            + '<div class="card">'
+            + '<div class="scan-ticker-row" style="grid-template-columns:80px 150px 50px 60px 140px 80px 80px 60px; font-weight:700; color:#7d8590; font-size:10px; text-transform:uppercase; letter-spacing:0.5px;">'
+            + '<div>TICKER</div><div>PATTERN</div><div>GRADE</div><div>DIR</div><div>ENTRY ZONE</div><div>STOP</div><div>TARGET</div><div>R:R</div>'
+            + '</div>'
+            + rows
+            + '</div>';
+
+        document.getElementById('patterns-loading').style.display = 'none';
+        document.getElementById('patterns-content').style.display = 'block';
+        setStatus('Patterns: ' + data.patterns_found + ' found');
+    } catch (err) {
+        document.getElementById('patterns-loading').style.display = 'none';
+        document.getElementById('patterns-error').style.display = 'block';
+        document.getElementById('patterns-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
+        setStatus('Error loading patterns');
+    }
+}
+
+function togglePatternDetail(idx) {
+    const panel = document.getElementById('pattern-detail-' + idx);
+    if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
 }
 
 // ===== SPX OPTIONS TAB =====

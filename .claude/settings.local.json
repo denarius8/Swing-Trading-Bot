@@ -22,7 +22,17 @@
       "Bash(curl -s \"http://localhost:5050/api/options/contract?strike=6750&expiration=2026-03-20&type=call&premium=28.00&contracts=1&target=56\")",
       "Bash(curl -s \"http://localhost:5050/api/options/contract?strike=6400&expiration=2026-03-27&type=put&premium=18.80&contracts=2\")",
       "Bash(python3 -m json.tool)",
-      "Bash(curl -s \"http://localhost:5050/api/options/contract?strike=6400&expiration=2026-03-27&type=put&premium=18.80&contracts=2&current_price=21.50\")"
+      "Bash(curl -s \"http://localhost:5050/api/options/contract?strike=6400&expiration=2026-03-27&type=put&premium=18.80&contracts=2&current_price=21.50\")",
+      "Bash(curl -s http://localhost:5050/api/predict)",
+      "Bash(curl -s http://localhost:5050/)",
+      "Bash(curl -s \"http://localhost:5050/api/confidence\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5050/)",
+      "Bash(curl -s \"http://localhost:5050/api/net-premium\")",
+      "Bash(curl -s \"http://localhost:5050/api/patterns?mode=default\")",
+      "Bash(xattr -c \"/Users/davecarlson/Documents/Claude Code/Swing Trading Bot/cache/spx_daily.csv\")",
+      "Bash(xattr -c \"/Users/davecarlson/Documents/Claude Code/Swing Trading Bot/cache/meta.json\")",
+      "Bash(xattr -c \"/Users/davecarlson/Documents/Claude Code/Swing Trading Bot/cache/net_premium.json\")",
+      "Bash(curl -s --max-time 60 \"http://localhost:5050/api/train\")"
     ]
   }
 }
