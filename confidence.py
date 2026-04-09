@@ -109,16 +109,28 @@ def fetch_news_sentiment(symbol="^GSPC"):
 
             # Handle different item formats
             if isinstance(item, dict):
-                title = item.get("title", item.get("headline", ""))
-                # Try different timestamp fields
-                ts = item.get("providerPublishTime", item.get("publish_time", None))
-                if ts and isinstance(ts, (int, float)):
-                    pub_time = datetime.fromtimestamp(ts)
-                elif ts and isinstance(ts, str):
-                    try:
-                        pub_time = datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
-                    except Exception:
-                        pass
+                # New yfinance format: title nested under item["content"]
+                content = item.get("content", {})
+                if isinstance(content, dict):
+                    title = content.get("title", "")
+                    # Timestamp in content.pubDate (ISO string)
+                    ts = content.get("pubDate", content.get("displayTime", ""))
+                    if ts and isinstance(ts, str):
+                        try:
+                            pub_time = datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+                        except Exception:
+                            pass
+                # Fallback: old format with title at top level
+                if not title:
+                    title = item.get("title", item.get("headline", ""))
+                    ts = item.get("providerPublishTime", item.get("publish_time", None))
+                    if ts and isinstance(ts, (int, float)):
+                        pub_time = datetime.fromtimestamp(ts)
+                    elif ts and isinstance(ts, str):
+                        try:
+                            pub_time = datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+                        except Exception:
+                            pass
             elif isinstance(item, str):
                 title = item
 
