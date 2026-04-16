@@ -157,6 +157,168 @@ def load_model():
     return model, scaler, feature_cols
 
 
+def train_trend_model(force_refresh_data=False):
+    """Train the 5-day trend model: will price be higher in 5 trading days?"""
+    print("\n" + "=" * 60)
+    print("  SPX 5-DAY TREND MODEL - TRAINING")
+    print("=" * 60)
+
+    raw_df = fetch_spx_data(force_refresh=force_refresh_data)
+    df = add_all_features(raw_df)
+
+    # Target: will price be up >0.5% in 5 trading days? (filters noise around flat)
+    fwd_return = (df["Close"].shift(-config.TREND_HORIZON) - df["Close"]) / df["Close"]
+    df["target"] = (fwd_return > 0.005).astype(int)
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.dropna()
+    df = df.iloc[:-config.TREND_HORIZON]  # drop last N rows (no target yet)
+
+    feature_cols = get_feature_columns(df)
+    X = df[feature_cols].values
+    y = df["target"].values
+
+    print(f"\n[TREND] Features: {len(feature_cols)}")
+    print(f"[TREND] Samples: {len(X)}")
+    print(f"[TREND] Class balance: {y.mean():.1%} bullish / {1 - y.mean():.1%} bearish")
+
+    split_idx = int(len(X) * (1 - config.TEST_SIZE))
+    X_train, X_test = X[:split_idx], X[split_idx:]
+    y_train, y_test = y[:split_idx], y[split_idx:]
+
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    # More regularized params for 5-day horizon — avoids overfitting to noise
+    rf = RandomForestClassifier(
+        n_estimators=config.N_ESTIMATORS,
+        max_depth=8,              # shallower trees for generalization
+        min_samples_split=20,     # need more samples to split
+        min_samples_leaf=10,      # larger leaves = smoother predictions
+        max_features="sqrt",
+        random_state=config.RANDOM_STATE,
+        n_jobs=-1
+    )
+    gb = GradientBoostingClassifier(
+        n_estimators=200,
+        max_depth=4,              # shallower for swing horizon
+        learning_rate=0.03,       # slower learning = better generalization
+        min_samples_split=20,
+        min_samples_leaf=10,
+        random_state=config.RANDOM_STATE,
+        subsample=0.7
+    )
+    model = VotingClassifier(estimators=[("rf", rf), ("gb", gb)], voting="soft")
+
+    print("[TREND] Training ensemble...")
+    model.fit(X_train_scaled, y_train)
+
+    y_pred = model.predict(X_test_scaled)
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"[TREND] Test Accuracy: {accuracy:.1%}")
+
+    os.makedirs("model", exist_ok=True)
+    joblib.dump(model, config.TREND_MODEL_PATH)
+    joblib.dump(scaler, config.TREND_SCALER_PATH)
+    joblib.dump(feature_cols, config.TREND_FEATURE_PATH)
+    print(f"[TREND] Saved to {config.TREND_MODEL_PATH}")
+
+    return model, scaler, feature_cols
+
+
+def load_trend_model():
+    """Load 5-day trend model, training it if it doesn't exist."""
+    if not os.path.exists(config.TREND_MODEL_PATH):
+        print("[TREND] No trend model found. Training now...")
+        return train_trend_model()
+    model = joblib.load(config.TREND_MODEL_PATH)
+    scaler = joblib.load(config.TREND_SCALER_PATH)
+    feature_cols = joblib.load(config.TREND_FEATURE_PATH)
+    return model, scaler, feature_cols
+
+
+def predict_trend():
+    """
+    Generate 5-day swing trend signal using a hybrid approach:
+    - ML probability (5-day forward return > 0.5%)
+    - Rules-based trend score from MA alignment, ADX, momentum
+    Combined into a single directional probability.
+    """
+    model, scaler, feature_cols = load_trend_model()
+
+    raw_df = fetch_spx_data(force_refresh=False)
+    df = add_all_features(raw_df)
+    df = df.dropna()
+
+    latest = df.iloc[-1]
+
+    # --- ML probability ---
+    X_new = latest[feature_cols].values.reshape(1, -1)
+    X_new_scaled = scaler.transform(X_new)
+    proba = model.predict_proba(X_new_scaled)[0]
+    ml_bull_prob = float(proba[1])
+
+    # --- Rules-based trend score (0–8 bullish signals) ---
+    trend_score = 0
+    trend_details = {}
+
+    # 1. Price above 50 SMA
+    above_50 = float(latest.get("dist_sma_50", 0)) > 0
+    trend_score += 1 if above_50 else 0
+    trend_details["above_50sma"] = above_50
+
+    # 2. Price above 200 SMA
+    above_200 = float(latest.get("dist_sma_200", 0)) > 0
+    trend_score += 1 if above_200 else 0
+    trend_details["above_200sma"] = above_200
+
+    # 3. Golden cross (50 > 200)
+    golden = float(latest.get("sma_50_200_cross", 0)) == 1
+    trend_score += 1 if golden else 0
+    trend_details["golden_cross"] = golden
+
+    # 4. ADX > 25 (trending)
+    adx_trending = float(latest.get("adx", 0)) > 25
+    trend_score += 1 if adx_trending else 0
+    trend_details["adx_trending"] = adx_trending
+
+    # 5. ADX +DI > -DI (bullish direction)
+    di_bull = float(latest.get("adx_pos", 0)) > float(latest.get("adx_neg", 0))
+    trend_score += 1 if di_bull else 0
+    trend_details["di_bullish"] = di_bull
+
+    # 6. 20-day return positive
+    ret_20 = float(latest.get("returns_20d", 0)) > 0
+    trend_score += 1 if ret_20 else 0
+    trend_details["ret_20d_positive"] = ret_20
+
+    # 7. Swing structure: higher highs (20-day)
+    hh = float(latest.get("higher_high_20", 0)) == 1
+    trend_score += 1 if hh else 0
+    trend_details["higher_highs"] = hh
+
+    # 8. Momentum not collapsing: MACD histogram positive
+    macd_pos = float(latest.get("macd_hist", 0)) > 0
+    trend_score += 1 if macd_pos else 0
+    trend_details["macd_positive"] = macd_pos
+
+    # --- Hybrid probability: blend ML (40%) + rules (60%) ---
+    rules_bull_prob = trend_score / 8.0
+    hybrid_prob = (0.40 * ml_bull_prob) + (0.60 * rules_bull_prob)
+
+    return {
+        "date": df.index[-1],
+        "close": float(latest["Close"]),
+        "bull_probability": round(hybrid_prob, 4),
+        "bear_probability": round(1 - hybrid_prob, 4),
+        "ml_prob": round(ml_bull_prob * 100, 1),
+        "trend_score": trend_score,
+        "trend_details": trend_details,
+        "adx": round(float(latest.get("adx", 0)), 1),
+        "ret_20d": round(float(latest.get("returns_20d", 0)) * 100, 2),
+    }
+
+
 def predict_next_day():
     """Generate prediction for the next trading day using latest data."""
     model, scaler, feature_cols = load_model()

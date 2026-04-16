@@ -115,6 +115,40 @@ def add_all_features(df):
     df["zscore_20"] = (df["Close"] - df["Close"].rolling(20).mean()) / df["Close"].rolling(20).std()
     df["zscore_50"] = (df["Close"] - df["Close"].rolling(50).mean()) / df["Close"].rolling(50).std()
 
+    # --- Swing / Trend-Specific Features (5-day model) ---
+    # Longer-horizon returns
+    df["returns_20d"] = df["Close"].pct_change(20)
+    df["returns_50d"] = df["Close"].pct_change(50)
+
+    # Longer RSI — better for swing trend identification
+    df["rsi_21"] = ta.momentum.rsi(df["Close"], window=21)
+
+    # MA spread: how far is 50 SMA from 200 SMA (trend strength/direction)
+    df["ma_spread_50_200"] = (df["sma_50"] - df["sma_200"]) / df["sma_200"]
+
+    # Trend regime: is the market in a trending or ranging environment
+    df["trend_regime"] = (df["adx"] > 25).astype(int)
+    df["strong_trend_regime"] = (df["adx"] > 40).astype(int)
+
+    # Higher highs / higher lows over 10 and 20 days (swing structure)
+    df["higher_high_10"] = (df["High"] > df["High"].shift(10)).astype(int)
+    df["higher_low_10"] = (df["Low"] > df["Low"].shift(10)).astype(int)
+    df["higher_high_20"] = (df["High"] > df["High"].shift(20)).astype(int)
+    df["higher_low_20"] = (df["Low"] > df["Low"].shift(20)).astype(int)
+
+    # Trend score: sum of higher highs + higher lows over recent swings
+    df["swing_trend_score"] = (df["higher_high_10"] + df["higher_low_10"] +
+                                df["higher_high_20"] + df["higher_low_20"])
+
+    # Momentum acceleration: is the 5d return accelerating vs 10d?
+    df["momentum_accel"] = df["returns_5d"] - df["returns_10d"]
+
+    # Volume trend: is volume higher on up days vs down days (accumulation)?
+    # Use a simpler calculation: rolling sum of signed volume
+    df["signed_volume"] = df["Volume"] * np.sign(df["returns_1d"].fillna(0))
+    df["vol_accumulation"] = df["signed_volume"].rolling(10).sum() / df["Volume"].rolling(10).mean().replace(0, np.nan)
+    df["vol_accumulation"] = df["vol_accumulation"].fillna(0)
+
     # Clean up inf values
     df = df.replace([np.inf, -np.inf], np.nan)
 

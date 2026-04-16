@@ -23,7 +23,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 import config
 import numpy as np
 import pandas as pd
-from model import train_model, predict_next_day, load_model, prepare_data
+from model import train_model, train_trend_model, predict_next_day, predict_trend, load_model, prepare_data
 from data_fetcher import fetch_spx_data
 from indicators import add_all_features, get_feature_columns
 from gex import fetch_gex_data
@@ -133,6 +133,24 @@ def api_predict():
         prediction_for = datetime.now().strftime("%A, %B %d, %Y")
         prev_close_label = prev_close_date.strftime("%A, %B %d, %Y")
 
+        # 5-day trend prediction
+        try:
+            trend = predict_trend()
+            trend_bull_prob = trend["bull_probability"]
+            trend_data = {
+                "bull_prob": round(trend_bull_prob * 100, 1),
+                "bear_prob": round(trend["bear_probability"] * 100, 1),
+                "signal": signal_label(trend_bull_prob),
+                "signal_class": signal_class(trend_bull_prob),
+                "ml_prob": trend.get("ml_prob"),
+                "trend_score": trend.get("trend_score"),
+                "trend_details": trend.get("trend_details", {}),
+                "adx": trend.get("adx"),
+                "ret_20d": trend.get("ret_20d"),
+            }
+        except Exception as te:
+            trend_data = {"bull_prob": None, "bear_prob": None, "signal": "UNAVAILABLE", "signal_class": "neutral", "error": str(te)}
+
         return jsonify({
             "success": True,
             "today": prediction_for,
@@ -147,6 +165,7 @@ def api_predict():
             "bear_prob": round(prediction["bear_probability"] * 100, 1),
             "signal": signal_label(bull_prob),
             "signal_class": signal_class(bull_prob),
+            "trend_5d": trend_data,
             "context": {
                 "sma20": {"dir": trend_sma20, "dist": f"{f.get('dist_sma_20', 0):+.2%}"},
                 "sma200": {"dir": trend_sma200, "dist": f"{f.get('dist_sma_200', 0):+.2%}"},
@@ -228,8 +247,9 @@ def api_backtest():
 @app.route("/api/train")
 def api_train():
     try:
-        model, scaler, feature_cols = train_model(force_refresh_data=True)
-        return jsonify({"success": True, "message": "Model retrained with latest market data."})
+        train_model(force_refresh_data=True)
+        train_trend_model(force_refresh_data=False)  # data already fresh from above
+        return jsonify({"success": True, "message": "Daily + 5-day trend models retrained with latest market data."})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 

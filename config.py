@@ -18,10 +18,16 @@ WILLIAMS_PERIOD = 14
 CCI_PERIOD = 20
 ADX_PERIOD = 14
 
-# Model
+# Model — Daily (next-day candle direction)
 MODEL_PATH = "model/spx_model.pkl"
 SCALER_PATH = "model/spx_scaler.pkl"
 FEATURE_PATH = "model/spx_features.pkl"
+
+# Model — 5-Day Trend (will price be higher in 5 trading days?)
+TREND_MODEL_PATH = "model/spx_trend_model.pkl"
+TREND_SCALER_PATH = "model/spx_trend_scaler.pkl"
+TREND_FEATURE_PATH = "model/spx_trend_features.pkl"
+TREND_HORIZON = 5  # trading days forward
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
 N_ESTIMATORS = 500

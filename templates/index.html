@@ -1437,6 +1437,7 @@ async function loadPrediction() {
         const c = data.context;
         const l = data.levels;
 
+        const t = data.trend_5d || {};
         document.getElementById('signal-content').innerHTML = `
             <div class="signal-card">
                 <div class="signal-date">${data.prediction_for || data.today}</div>
@@ -1447,19 +1448,71 @@ async function loadPrediction() {
                     <span style="color:${data.live_change >= 0 ? '#3fb950' : '#f85149'}; font-size:11px;">${data.live_change >= 0 ? '+' : ''}${data.live_change} (${data.live_change >= 0 ? '+' : ''}${data.live_change_pct}%)</span>
                 </div>` : `<div style="font-size:11px; color:#484f58; margin-bottom:12px;">Market closed</div>`}
                 <div class="signal-close"><span>Prev Close</span> ${data.close.toLocaleString()}</div>
-                <div class="signal-badge ${data.signal_class}">${data.signal}</div>
-                <div class="prob-container">
-                    <div class="prob-label bear">BEAR</div>
-                    <div>
-                        <div class="prob-bar-track">
-                            <div class="prob-bar-fill bull-fill" style="width: ${data.bull_prob}%"></div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
+
+                    <div style="background:#0d1117; border:1px solid #30363d; border-radius:8px; padding:16px; text-align:center;">
+                        <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">Tomorrow (Next Candle)</div>
+                        <div class="signal-badge ${data.signal_class}" style="margin:0 auto 12px;">${data.signal}</div>
+                        <div class="prob-container" style="margin:0;">
+                            <div class="prob-label bear">BEAR</div>
+                            <div>
+                                <div class="prob-bar-track">
+                                    <div class="prob-bar-fill bull-fill" style="width:${data.bull_prob}%"></div>
+                                </div>
+                                <div class="prob-values" style="margin:6px auto 0; display:flex; justify-content:space-between;">
+                                    <span>${data.bear_prob}%</span>
+                                    <span>${data.bull_prob}%</span>
+                                </div>
+                            </div>
+                            <div class="prob-label bull">BULL</div>
                         </div>
-                        <div class="prob-values" style="margin: 6px auto 0; display:flex; justify-content:space-between;">
-                            <span>${data.bear_prob}%</span>
-                            <span>${data.bull_prob}%</span>
-                        </div>
+                        <div style="font-size:11px; color:#484f58; margin-top:10px;">Will tomorrow's candle close above open?</div>
                     </div>
-                    <div class="prob-label bull">BULL</div>
+
+                    <div style="background:#0d1117; border:1px solid #30363d; border-radius:8px; padding:16px; text-align:center;">
+                        <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">5-Day Trend (Swing)</div>
+                        <div class="signal-badge ${t.signal_class || 'neutral'}" style="margin:0 auto 12px;">${t.signal || 'N/A'}</div>
+                        <div class="prob-container" style="margin:0;">
+                            <div class="prob-label bear">BEAR</div>
+                            <div>
+                                <div class="prob-bar-track">
+                                    <div class="prob-bar-fill bull-fill" style="width:${t.bull_prob || 50}%"></div>
+                                </div>
+                                <div class="prob-values" style="margin:6px auto 0; display:flex; justify-content:space-between;">
+                                    <span>${t.bear_prob || '—'}%</span>
+                                    <span>${t.bull_prob || '—'}%</span>
+                                </div>
+                            </div>
+                            <div class="prob-label bull">BULL</div>
+                        </div>
+                        <div style="font-size:11px; color:#484f58; margin-top:10px; margin-bottom:8px;">Hybrid: ML + 8-factor trend score</div>
+                        ${t.trend_score !== undefined ? `
+                        <div style="display:flex; justify-content:center; align-items:center; gap:8px; margin-bottom:8px;">
+                            <span style="font-size:11px; color:#7d8590;">Trend Score:</span>
+                            <span style="font-size:15px; font-weight:700; color:${t.trend_score >= 6 ? '#3fb950' : t.trend_score >= 4 ? '#d29922' : '#f47067'};">${t.trend_score}/8</span>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:4px; justify-content:center;">
+                            ${t.trend_details ? Object.entries(t.trend_details).map(([k,v]) => `
+                                <span style="font-size:9px; padding:2px 6px; border-radius:3px; background:${v ? '#0f2419' : '#2d0f0f'}; color:${v ? '#3fb950' : '#f47067'}; border:1px solid ${v ? '#238636' : '#da3633'};">
+                                    ${k.replace(/_/g,' ')}
+                                </span>`).join('') : ''}
+                        </div>
+                        <div style="font-size:10px; color:#484f58; margin-top:6px;">ML: ${t.ml_prob}% bull &nbsp;|&nbsp; ADX: ${t.adx} &nbsp;|&nbsp; 20d: ${t.ret_20d > 0 ? '+' : ''}${t.ret_20d}%</div>
+                        ` : ''}
+                    </div>
+
+                </div>
+
+                <div style="margin-top:12px; padding:10px 14px; background:#161b22; border-radius:6px; border-left:3px solid ${
+                    data.signal_class === t.signal_class ? '#3fb950' : '#d29922'
+                };">
+                    <span style="font-size:11px; color:#7d8590;">Signal alignment: </span>
+                    <strong style="font-size:12px; color:${data.signal_class === t.signal_class ? '#3fb950' : '#d29922'};">
+                        ${data.signal_class === t.signal_class
+                            ? '✓ Both signals agree — higher conviction'
+                            : '⚠ Signals diverge — daily pullback likely within larger trend'}
+                    </strong>
                 </div>
             </div>
 
