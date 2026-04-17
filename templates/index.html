@@ -2723,18 +2723,38 @@ async function loadConfluence() {
                     ${data.change_1d >= 0 ? '+' : ''}${data.change_1d}% prev close
                 </div>
                 ${liveHtml}
-                <div style="margin-top:16px;">
-                    <div class="confluence-signal ${data.signal_class}">${data.signal}</div>
+                <div style="margin-top:20px; display:flex; align-items:flex-start; justify-content:center; gap:24px; flex-wrap:wrap;">
+                    <div>
+                        <div style="font-size:10px; color:#484f58; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px;">Trend System (10)</div>
+                        <div class="confluence-signal ${data.signal_class}">${data.signal}</div>
+                        <div class="confluence-score" style="color:${signalColor}; font-size:28px; margin-top:4px;">${data.strength}/10</div>
+                        <div style="color:#7d8590; font-size:11px; margin-top:2px;">
+                            <span style="color:#3fb950;">${data.long_count}↑</span> &nbsp;
+                            <span style="color:#7d8590;">${data.neutral_count}•</span> &nbsp;
+                            <span style="color:#ff7b72;">${data.short_count}↓</span>
+                        </div>
+                    </div>
+                    ${data.reversal ? (() => {
+                        const rev = data.reversal;
+                        const revColor = rev.signal === 'ENTER LONG'  ? '#3fb950' :
+                                         rev.signal === 'ENTER SHORT' ? '#ff7b72' :
+                                         rev.signal.includes('WATCH') ? '#d29922' : '#7d8590';
+                        const regimeLabelColor = rev.regime === 'EXTREME' ? '#ff7b72' : rev.regime === 'ELEVATED' ? '#d29922' : '#484f58';
+                        return '<div style="border-left:1px solid #21262d; padding-left:24px;">'
+                            + '<div style="font-size:10px; color:#484f58; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px;">Reversal Entry (6) &nbsp;<span style="color:' + regimeLabelColor + ';">' + rev.regime + '</span></div>'
+                            + '<div class="confluence-signal ' + rev.signal_class + '" style="font-size:15px; padding:10px 20px;">' + rev.signal + '</div>'
+                            + '<div style="font-size:28px; font-weight:800; color:' + revColor + '; margin-top:4px;">' + rev.long_count + '/' + (rev.long_count + rev.short_count + rev.neutral_count) + '</div>'
+                            + '<div style="color:#7d8590; font-size:11px; margin-top:2px;">'
+                            + '<span style="color:#3fb950;">' + rev.long_count + '↑</span> &nbsp;'
+                            + '<span style="color:#7d8590;">' + rev.neutral_count + '•</span> &nbsp;'
+                            + '<span style="color:#ff7b72;">' + rev.short_count + '↓</span>'
+                            + '</div>'
+                            + '</div>';
+                    })() : ''}
                 </div>
-                ${data.confidence ? '<div><span class="confidence-banner ' + data.confidence.grade_class + '">CONFIDENCE: ' + data.confidence.grade + '</span></div>' : ''}
-                ${data.confidence && data.confidence.grade !== 'N/A' ? '<div style="font-size:11px; color:#7d8590; margin:4px 0;">' + data.confidence.supporting + ' supporting | ' + data.confidence.conflicting + ' conflicting | ' + data.confidence.neutral + ' neutral (of ' + data.confidence.total + ' leading indicators)</div>' : ''}
-                <div class="confluence-score" style="color:${signalColor};">${data.strength}/10</div>
-                <div style="color:#7d8590; font-size:12px; margin-bottom:8px;">
-                    <span style="color:#3fb950;">${data.long_count} Long</span> &nbsp;|&nbsp;
-                    <span style="color:#7d8590;">${data.neutral_count} Neutral</span> &nbsp;|&nbsp;
-                    <span style="color:#ff7b72;">${data.short_count} Short</span>
+                <div style="margin-top:14px;">
+                    <div class="confluence-meter">${meterDots}</div>
                 </div>
-                <div class="confluence-meter">${meterDots}</div>
                 ${data.confidence && data.confidence.warnings && data.confidence.warnings.length > 0 ? '<div class="confidence-warnings">' + data.confidence.warnings.map(w => '<div class="confidence-warning-item">' + w + '</div>').join('') + '</div>' : ''}
             </div>
 
