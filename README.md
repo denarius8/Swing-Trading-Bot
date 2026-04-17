@@ -11,7 +11,7 @@ A real-time S&P 500 trading research dashboard combining dual machine learning s
 | Tab | Description |
 |-----|-------------|
 | **Confluence** | 10-indicator consensus signal (RSI, VWAP, EMA Stack, MACD, Bollinger Bands, Volume, Key Levels, ADX, Stochastic, 200 SMA). Fires ENTER LONG/SHORT when 7+ indicators align. Includes 5 leading confidence indicators and net premium tracking. |
-| **SPX Options** | Full options chain analysis — Greeks (delta, gamma, theta, vega), IV surface, 0DTE-30DTE premium decay, implied move, key strike levels. |
+| **SPX Options** | Full options chain analysis — Greeks (delta, gamma, theta, vega), IV surface, 0DTE-30DTE premium decay, implied move, key strike levels. Includes Scaled Entry Checklist and Trade Card Enforcer. |
 | **Portfolio** | Track open positions with real-time P&L, exit signals, stop/target alerts, position sizing calculator, and trade history. |
 | **Scanner** | Batch confluence scan across 38-570 tickers. Filter by signal type (ENTER LONG, ENTER SHORT, HOLD). |
 | **Patterns** | AskLivermore-style chart pattern detection — VCP, Bull Flag, New Uptrend, Golden Pocket, Livermore Breakout — with A+ to B quality grading. |
@@ -126,6 +126,36 @@ Tracks net dollar flow into SPX options as a leading indicator:
 - **Signal**: 4+ consecutive positive days = bullish (+1), 4+ negative = bearish (-1)
 - **Display**: 20-day rolling table with streak counter matching Unusual Whales format
 
+### Scaled Entry Checklist
+
+A 5-point scoring system that auto-populates from live market data and determines position size tier before entry:
+
+| Score | Tier | Action |
+|-------|------|--------|
+| < 2.5 | **NO TRADE** | Cash is correct. Neither direction confirmed. |
+| 2.5–3.4 | **STARTER** | 25% of max outlay. Defined small risk. |
+| 3.5–4.4 | **ADD** | 50% total. Only after starter is live and in your favor. |
+| 4.5–5.0 | **FULL** | 100% outlay. All checks confirmed. |
+
+**5 Checks (auto-populated from live data):**
+1. **Structural Trend** — Weekly + Daily Heikin-Ashi alignment + Golden Cross (SMA50 > SMA200)
+2. **Momentum Alignment** — 4H + 1H HA confirmation with volume
+3. **Execution Layer (15M)** — 15M HA + MACD direction for optimal entry timing
+4. **Extension Risk** — Distance from EMA20: ≤3% ideal, ≤5% elevated, >5% overextended
+5. **Divergence Warnings** — Weekly MACD cross, VIX spike (>5%), GLD hedge flow (>1.5%)
+
+Supports any ticker (default: `^GSPC` / SPX). Works alongside any confluence signal.
+
+### Trade Card Enforcer
+
+Forces a written plan before every entry. Unlocked automatically when checklist score ≥ 2.5 (STARTER). Required fields:
+- Contract details (ticker, direction, expiry, strike, entry price, number of contracts)
+- Trade thesis (free text, required)
+- Exit targets: SPX level at T1, T2, T3 + stop SPX level
+- Auto-validates max risk ($) against account 2% rule
+
+Saved to `trade_log.json` (git-ignored, stays local). Last 20 trades visible in the Trade Log table.
+
 ### GEX Chart
 
 Net GEX by Strike chart with:
@@ -150,6 +180,8 @@ Net GEX by Strike chart with:
 ├── patterns.py            # Chart pattern detection + grading
 ├── universe.py            # Ticker lists (S&P 500, popular, ETFs)
 ├── portfolio.py           # Position tracking + P&L
+├── scaled_checklist.py    # 5-point entry scoring: STARTER / ADD / FULL / NO TRADE
+├── trade_card.py          # Pre-trade plan enforcer + trade log storage
 ├── bot.py                 # CLI interface for signals
 ├── start_dashboard.command # Double-click to launch server + open browser (macOS)
 ├── templates/
@@ -181,6 +213,9 @@ Net GEX by Strike chart with:
 | `/api/risk-calc` | GET | Position sizing calculator |
 | `/api/live` | GET | Current SPX price + day stats |
 | `/api/exit` | GET | Exit analysis for open position |
+| `/api/checklist` | GET | Scaled entry checklist score + tier (add `?symbol=AAPL` for any ticker) |
+| `/api/trade-card` | POST | Save a trade card to trade_log.json |
+| `/api/trade-log` | GET | Last N trade cards (`?n=20`) |
 
 ## CLI Usage
 
