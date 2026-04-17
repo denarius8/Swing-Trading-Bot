@@ -777,10 +777,26 @@ def api_live():
         return jsonify({"success": False, "error": str(e)})
 
 
+def _sanitize(obj):
+    """Recursively convert numpy scalars to JSON-serializable Python types."""
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    return obj
+
+
 @app.route("/api/patterns")
 def api_patterns():
     try:
         from flask import request
+        import time
         custom = request.args.get("tickers", None)
         mode = request.args.get("mode", "default")
         min_grade = request.args.get("min_grade", "B")
@@ -796,13 +812,16 @@ def api_patterns():
             pattern_names = [p.strip() for p in pattern_filter.split(",")]
             patterns = {k: v for k, v in PATTERN_REGISTRY.items() if k in pattern_names}
 
+        t0 = time.time()
         results = scan_universe(symbols, patterns=patterns, min_grade=min_grade)
+        elapsed = round(time.time() - t0, 1)
 
         return jsonify({
             "success": True,
-            "results": results,
+            "results": _sanitize(results),
             "total_scanned": len(symbols),
             "patterns_found": len(results),
+            "scan_time_sec": elapsed,
             "available_patterns": list(PATTERN_REGISTRY.keys()),
             "universe_info": get_universe_info(),
             "timestamp": datetime.now().strftime("%H:%M:%S"),
