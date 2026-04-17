@@ -2742,7 +2742,7 @@ async function loadConfluence() {
                         const regimeLabelColor = rev.regime === 'EXTREME' ? '#ff7b72' : rev.regime === 'ELEVATED' ? '#d29922' : '#484f58';
                         return '<div style="border-left:1px solid #21262d; padding-left:24px;">'
                             + '<div style="font-size:10px; color:#484f58; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px;">Reversal Entry (6) &nbsp;<span style="color:' + regimeLabelColor + ';">' + rev.regime + '</span></div>'
-                            + '<div class="confluence-signal ' + rev.signal_class + '" style="font-size:15px; padding:10px 20px;">' + rev.signal + '</div>'
+                            + '<div class="confluence-signal ' + rev.signal_class + '">' + rev.signal + '</div>'
                             + '<div style="font-size:28px; font-weight:800; color:' + revColor + '; margin-top:4px;">' + rev.long_count + '/' + (rev.long_count + rev.short_count + rev.neutral_count) + '</div>'
                             + '<div style="color:#7d8590; font-size:11px; margin-top:2px;">'
                             + '<span style="color:#3fb950;">' + rev.long_count + '↑</span> &nbsp;'
