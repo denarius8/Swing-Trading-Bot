@@ -379,6 +379,59 @@
             font-weight: 500;
         }
 
+        /* ── Scaled Entry Checklist ─────────────────────────────── */
+        .checklist-panel { background:#0d1117; border:1px solid #30363d; border-radius:8px; padding:18px; margin-bottom:18px; }
+        .checklist-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px; }
+        .checklist-title { font-size:13px; font-weight:700; color:#e6edf3; text-transform:uppercase; letter-spacing:.5px; }
+        .checklist-meta { font-size:11px; color:#484f58; }
+
+        .checklist-score-row { display:flex; align-items:center; gap:14px; margin-bottom:16px; }
+        .checklist-score-num { font-size:32px; font-weight:800; line-height:1; }
+        .checklist-score-track { flex:1; height:10px; background:#21262d; border-radius:5px; overflow:hidden; }
+        .checklist-score-fill { height:100%; border-radius:5px; transition:width .5s ease; }
+
+        .checklist-tier-badge { display:inline-block; padding:5px 14px; border-radius:20px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
+        .tier-no-trade  { background:#2d2d0f; color:#d29922; border:1px solid #7d6a00; }
+        .tier-starter   { background:#0f2419; color:#3fb950; border:1px solid #238636; }
+        .tier-add       { background:#1a2433; color:#58a6ff; border:1px solid #1f6feb; }
+        .tier-full      { background:#2d1a3d; color:#bc8cff; border:1px solid #6e40c9; }
+
+        .checklist-direction { font-size:13px; font-weight:700; padding:4px 10px; border-radius:4px; }
+        .dir-bullish { background:#0f2419; color:#3fb950; }
+        .dir-bearish { background:#2d0f0f; color:#f47067; }
+        .dir-neutral { background:#21262d; color:#7d8590; }
+
+        .check-row { display:flex; align-items:flex-start; gap:12px; padding:9px 0; border-bottom:1px solid #21262d; }
+        .check-row:last-child { border-bottom:none; }
+        .check-score-badge { min-width:34px; text-align:center; font-size:13px; font-weight:700; padding:3px 6px; border-radius:4px; }
+        .score-full  { background:#0f2419; color:#3fb950; }
+        .score-half  { background:#2a2000; color:#d29922; }
+        .score-zero  { background:#2d0f0f; color:#f47067; }
+        .check-name  { font-size:12px; font-weight:600; color:#e6edf3; white-space:nowrap; min-width:160px; }
+        .check-detail { font-size:11px; color:#7d8590; }
+
+        .checklist-verdict { margin-top:14px; padding:10px 14px; background:#161b22; border-radius:6px; font-size:12px; color:#e6edf3; border-left:3px solid #30363d; }
+        .checklist-account { display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; }
+        .checklist-account-item { font-size:11px; color:#484f58; }
+        .checklist-account-item strong { color:#7d8590; }
+
+        /* Trade Card */
+        .trade-card-panel { background:#0d1117; border:1px solid #388bfd33; border-radius:8px; padding:18px; margin-bottom:18px; display:none; }
+        .trade-card-title { font-size:13px; font-weight:700; color:#58a6ff; text-transform:uppercase; letter-spacing:.5px; margin-bottom:14px; }
+        .trade-card-section { font-size:10px; color:#484f58; text-transform:uppercase; letter-spacing:1px; margin:14px 0 6px; border-bottom:1px solid #21262d; padding-bottom:4px; }
+        .trade-card-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:10px; }
+        .trade-card-field label { display:block; font-size:10px; color:#7d8590; margin-bottom:3px; }
+        .trade-card-field input, .trade-card-field select, .trade-card-field textarea {
+            width:100%; background:#161b22; border:1px solid #30363d; border-radius:4px;
+            color:#e6edf3; font-size:12px; padding:6px 8px; box-sizing:border-box;
+        }
+        .trade-card-field textarea { resize:vertical; min-height:50px; }
+        .trade-card-warning { background:#2a1500; border:1px solid #d29922; border-radius:4px; padding:8px 12px; font-size:11px; color:#d29922; margin-top:8px; display:none; }
+
+        /* Trade Log */
+        .trade-log-row { font-size:11px; }
+        .trade-log-row td { padding:6px 8px; border-bottom:1px solid #21262d; vertical-align:top; }
+
         /* GEX Chart */
         .gex-bar-chart {
             display: flex;
@@ -1074,6 +1127,142 @@
     </div>
 
     <div id="options-tab" class="tab-content">
+
+        <!-- ── Scaled Entry Checklist ───────────────────────────────── -->
+        <div class="checklist-panel">
+            <div class="checklist-header">
+                <div>
+                    <div class="checklist-title">Scaled Entry Checklist</div>
+                    <div class="checklist-meta">5-point trend confirmation — scores determine position size tier</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="text" id="checklist-symbol" value="SPX" placeholder="SPX / AAPL / QQQ"
+                        style="width:110px; background:#161b22; border:1px solid #30363d; border-radius:4px; color:#e6edf3; font-size:12px; padding:6px 8px; text-transform:uppercase;">
+                    <button class="btn primary" onclick="runChecklist()" id="checklist-btn">Run Checklist</button>
+                </div>
+            </div>
+            <div id="checklist-result" style="display:none;"></div>
+            <div id="checklist-loading" style="display:none; color:#484f58; font-size:12px; padding:8px 0;">
+                <div class="spinner" style="display:inline-block; width:14px; height:14px; margin-right:6px;"></div>
+                Fetching live data across all timeframes...
+            </div>
+        </div>
+
+        <!-- ── Trade Card ──────────────────────────────────────────── -->
+        <div class="trade-card-panel" id="trade-card-panel">
+            <div class="trade-card-title">📋 Trade Card — Complete Before Entry</div>
+            <div id="trade-card-prefill" style="font-size:11px; color:#484f58; margin-bottom:10px;"></div>
+
+            <div class="trade-card-section">Position Details</div>
+            <div class="trade-card-grid">
+                <div class="trade-card-field">
+                    <label>Contract & Expiry (e.g. SPX 5/12 7100C)</label>
+                    <input type="text" id="tc-contract" placeholder="SPX 5/12 7100C">
+                </div>
+                <div class="trade-card-field">
+                    <label>Direction</label>
+                    <select id="tc-direction">
+                        <option value="CALL">CALL</option>
+                        <option value="PUT">PUT</option>
+                    </select>
+                </div>
+                <div class="trade-card-field">
+                    <label>Entry Price ($)</label>
+                    <input type="number" id="tc-entry-price" placeholder="24.15" step="0.01">
+                </div>
+                <div class="trade-card-field">
+                    <label>Contracts</label>
+                    <input type="number" id="tc-contracts" placeholder="1" value="1" min="1">
+                </div>
+                <div class="trade-card-field">
+                    <label>Entry Tier</label>
+                    <select id="tc-tier">
+                        <option value="STARTER">STARTER (25%)</option>
+                        <option value="ADD">ADD (50%)</option>
+                        <option value="FULL">FULL (100%)</option>
+                    </select>
+                </div>
+                <div class="trade-card-field">
+                    <label>SPX Price at Entry</label>
+                    <input type="number" id="tc-spx-entry" placeholder="7050" step="1">
+                </div>
+            </div>
+
+            <div class="trade-card-section">Thesis (required)</div>
+            <div class="trade-card-field">
+                <textarea id="tc-thesis" placeholder="Why does this trade make sense right now? (required — cannot be blank)" rows="2"></textarea>
+            </div>
+
+            <div class="trade-card-section">Exit Targets (required — plan before entry)</div>
+            <div class="trade-card-grid">
+                <div class="trade-card-field">
+                    <label>T1 — SPX Level (close 25%)</label>
+                    <input type="number" id="tc-t1-spx" placeholder="7150" step="1">
+                </div>
+                <div class="trade-card-field">
+                    <label>T2 — SPX Level (close 50%)</label>
+                    <input type="number" id="tc-t2-spx" placeholder="7250" step="1">
+                </div>
+                <div class="trade-card-field">
+                    <label>T3 — Trail (SPX points behind price)</label>
+                    <input type="number" id="tc-t3-trail" placeholder="15" step="1">
+                </div>
+            </div>
+
+            <div class="trade-card-section">Stop Loss (required)</div>
+            <div class="trade-card-grid">
+                <div class="trade-card-field">
+                    <label>Stop SPX Level (thesis invalidation)</label>
+                    <input type="number" id="tc-stop-spx" placeholder="6980" step="1">
+                </div>
+                <div class="trade-card-field">
+                    <label>Stop Option Price Floor ($)</label>
+                    <input type="number" id="tc-stop-option" placeholder="12.00" step="0.01">
+                </div>
+            </div>
+
+            <div class="trade-card-section">Add-To Triggers (for scaling later)</div>
+            <div class="trade-card-grid">
+                <div class="trade-card-field">
+                    <label>Add Trigger 1</label>
+                    <input type="text" id="tc-add1" placeholder="SPX holds 7100 + 15m green candle">
+                </div>
+                <div class="trade-card-field">
+                    <label>Add Trigger 2</label>
+                    <input type="text" id="tc-add2" placeholder="Option up 20% from starter entry">
+                </div>
+            </div>
+
+            <div class="trade-card-section">Risk Validation</div>
+            <div class="trade-card-grid">
+                <div class="trade-card-field">
+                    <label>Max Acceptable Loss ($)</label>
+                    <input type="number" id="tc-max-loss" placeholder="327" step="1" oninput="validateTradeRisk()">
+                </div>
+                <div class="trade-card-field" style="display:flex; align-items:flex-end;">
+                    <div id="tc-risk-summary" style="font-size:11px; color:#7d8590; padding-bottom:6px;"></div>
+                </div>
+            </div>
+            <div class="trade-card-warning" id="tc-warning-outlay">⚠ Outlay exceeds recommended tier size. Type CONFIRM to override.</div>
+            <div class="trade-card-warning" id="tc-warning-risk">⚠ Max loss exceeds 2% of account ($<span id="tc-max-risk-val"></span>). Type CONFIRM to override.</div>
+            <div id="tc-confirm-row" style="display:none; margin-top:8px;">
+                <label style="font-size:11px; color:#d29922;">Type CONFIRM to override warnings:</label>
+                <input type="text" id="tc-confirm-input" placeholder="CONFIRM" style="width:120px; margin-left:8px; background:#161b22; border:1px solid #d29922; border-radius:4px; color:#e6edf3; font-size:12px; padding:5px 8px;">
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:16px; align-items:center;">
+                <button class="btn primary" onclick="submitTradeCard()" style="background:#1f6feb;">Submit Trade Card</button>
+                <button class="btn" onclick="closeTradeCard()">Cancel</button>
+                <span style="font-size:11px; color:#484f58;">Type SUBMIT in the final confirmation to log the trade.</span>
+            </div>
+            <div id="tc-final-confirm" style="display:none; margin-top:10px;">
+                <label style="font-size:12px; color:#3fb950; font-weight:600;">Ready to log. Type SUBMIT to confirm:</label>
+                <input type="text" id="tc-submit-input" placeholder="SUBMIT" style="width:100px; margin-left:8px; background:#161b22; border:1px solid #3fb950; border-radius:4px; color:#e6edf3; font-size:12px; padding:5px 8px;">
+                <button class="btn primary" onclick="confirmSubmit()" style="margin-left:8px; background:#238636;">Log Trade</button>
+            </div>
+        </div>
+
+        <!-- ── Contract Analyzer (existing) ────────────────────────── -->
         <div class="exit-form" style="margin-top:0; margin-bottom:16px;">
             <div class="exit-form-title">SPX Contract Analyzer — Run Probabilities on a Trade</div>
             <div style="font-size:11px; color:#7d8590; margin-bottom:10px;">Enter your SPX option contract details to see probability of profit, P&L scenarios, and theta decay.</div>
@@ -1120,6 +1309,19 @@
         </div>
         <div id="options-content" style="display:none;"></div>
         <div id="options-error" style="display:none;"></div>
+
+        <!-- ── Trade Log ───────────────────────────────────────────── -->
+        <div id="trade-log-panel" style="display:none; margin-top:4px;">
+            <div class="card">
+                <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>Trade Log</span>
+                    <button class="btn" onclick="loadTradeLog()" style="font-size:10px; padding:3px 10px;">Refresh</button>
+                </div>
+                <div id="trade-log-content">
+                    <div style="font-size:11px; color:#484f58; padding:8px 0;">No trades logged yet.</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div id="portfolio-tab" class="tab-content">
@@ -1418,6 +1620,309 @@ function rsiColor(v) {
     if (v > 70) return 'red';
     if (v < 30) return 'green';
     return '';
+}
+
+// ── Scaled Entry Checklist ─────────────────────────────────────────
+
+let _checklistResult = null;
+
+async function runChecklist() {
+    const sym = (document.getElementById('checklist-symbol').value || 'SPX').trim().toUpperCase();
+    const resultDiv = document.getElementById('checklist-result');
+    const loadingDiv = document.getElementById('checklist-loading');
+    const btn = document.getElementById('checklist-btn');
+
+    resultDiv.style.display = 'none';
+    loadingDiv.style.display = 'block';
+    btn.disabled = true;
+    btn.textContent = 'Fetching...';
+    setStatus('Running entry checklist...');
+
+    try {
+        const res = await fetch('/api/checklist?symbol=' + encodeURIComponent(sym));
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error);
+
+        _checklistResult = d;
+
+        const scoreColor = d.score >= 4.5 ? '#bc8cff' : d.score >= 3.5 ? '#58a6ff' : d.score >= 2.5 ? '#3fb950' : '#d29922';
+        const fillPct = (d.score / 5.0 * 100).toFixed(0);
+
+        const tierClass = {
+            'NO TRADE': 'tier-no-trade',
+            'STARTER':  'tier-starter',
+            'ADD':      'tier-add',
+            'FULL':     'tier-full',
+        }[d.tier] || 'tier-no-trade';
+
+        const dirClass = d.direction === 'BULLISH' ? 'dir-bullish' : d.direction === 'BEARISH' ? 'dir-bearish' : 'dir-neutral';
+
+        let checksHtml = '';
+        d.checks.forEach(c => {
+            const scoreClass = c.score === 1.0 ? 'score-full' : c.score === 0.5 ? 'score-half' : 'score-zero';
+            const scoreLabel = c.score === 1.0 ? '1.0' : c.score === 0.5 ? '0.5' : '0.0';
+            checksHtml += `
+                <div class="check-row">
+                    <div class="check-score-badge ${scoreClass}">${scoreLabel}</div>
+                    <div>
+                        <div class="check-name">Check ${c.id}: ${c.name}</div>
+                        <div class="check-detail">${c.detail}</div>
+                    </div>
+                </div>`;
+        });
+
+        const warningsHtml = d.warnings.length > 0
+            ? `<div style="margin-top:8px; font-size:11px; color:#d29922;">⚠ ${d.warnings.join(' &nbsp;|&nbsp; ')}</div>`
+            : '';
+
+        const outlayHtml = d.tier !== 'NO TRADE'
+            ? `<div style="margin-top:6px; font-size:12px; color:#e6edf3;">
+                Recommended outlay: <strong style="color:${scoreColor};">$${d.recommended_outlay.toLocaleString()}</strong>
+                <span style="color:#484f58; font-size:10px;"> (${d.tier === 'STARTER' ? '25%' : d.tier === 'ADD' ? '50%' : '100%'} of max risk)</span>
+               </div>`
+            : '';
+
+        const tradeCardBtn = d.score >= 2.5
+            ? `<button class="btn primary" onclick="openTradeCard()" style="margin-top:12px;">📋 Open Trade Card</button>`
+            : '';
+
+        resultDiv.innerHTML = `
+            <div class="checklist-score-row">
+                <div class="checklist-score-num" style="color:${scoreColor};">${d.score}</div>
+                <div style="flex:1;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+                        <span style="font-size:11px; color:#7d8590;">/ 5.0</span>
+                        <div class="checklist-tier-badge ${tierClass}">${d.tier}</div>
+                        <div class="checklist-direction ${dirClass}">${d.direction}</div>
+                    </div>
+                    <div class="checklist-score-track">
+                        <div class="checklist-score-fill" style="width:${fillPct}%; background:${scoreColor};"></div>
+                    </div>
+                </div>
+            </div>
+
+            ${checksHtml}
+
+            <div class="checklist-verdict" style="border-left-color:${scoreColor};">
+                ${d.verdict}
+                ${outlayHtml}
+                ${warningsHtml}
+            </div>
+
+            <div class="checklist-account">
+                <div class="checklist-account-item"><strong>Account:</strong> $${d.account_balance.toLocaleString()}</div>
+                <div class="checklist-account-item"><strong>Max Risk/Trade:</strong> $${d.max_risk.toLocaleString()}</div>
+                <div class="checklist-account-item"><strong>Symbol:</strong> ${d.symbol}</div>
+                <div class="checklist-account-item"><strong>VIX:</strong> ${(d.raw_data.vix_change_pct || 0) >= 0 ? '+' : ''}${(d.raw_data.vix_change_pct || 0).toFixed(1)}%
+                    &nbsp; <strong>GLD:</strong> ${(d.raw_data.gld_change_pct || 0) >= 0 ? '+' : ''}${(d.raw_data.gld_change_pct || 0).toFixed(1)}%</div>
+            </div>
+
+            ${tradeCardBtn}
+        `;
+
+        resultDiv.style.display = 'block';
+        setStatus('Checklist complete: ' + d.score + '/5.0 — ' + d.tier);
+
+    } catch (err) {
+        resultDiv.innerHTML = `<div class="error-msg">Error: ${err.message}</div>`;
+        resultDiv.style.display = 'block';
+        setStatus('Checklist error');
+    } finally {
+        loadingDiv.style.display = 'none';
+        btn.disabled = false;
+        btn.textContent = 'Run Checklist';
+    }
+}
+
+
+// ── Trade Card ────────────────────────────────────────────────────
+
+let _tradeCardWarnings = { outlay: false, risk: false };
+
+function openTradeCard() {
+    const panel = document.getElementById('trade-card-panel');
+    panel.style.display = 'block';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Pre-fill from checklist result
+    if (_checklistResult) {
+        const d = _checklistResult;
+        const prefill = document.getElementById('trade-card-prefill');
+        prefill.innerHTML = `From checklist — Score: <strong>${d.score}/5.0</strong> &nbsp;|&nbsp; Tier: <strong>${d.tier}</strong>
+            &nbsp;|&nbsp; Direction: <strong>${d.direction}</strong>
+            &nbsp;|&nbsp; Recommended outlay: <strong>$${d.recommended_outlay.toLocaleString()}</strong>`;
+
+        // Pre-select tier
+        const tierMap = { 'STARTER': 'STARTER', 'ADD': 'ADD', 'FULL': 'FULL' };
+        if (tierMap[d.tier]) document.getElementById('tc-tier').value = tierMap[d.tier];
+
+        // Pre-select direction
+        document.getElementById('tc-direction').value = d.direction === 'BEARISH' ? 'PUT' : 'CALL';
+
+        // Set symbol
+        document.getElementById('tc-contract').placeholder = d.symbol !== '^GSPC' ? d.symbol + ' ...' : 'SPX ...';
+
+        // Show max risk hint
+        document.getElementById('tc-max-loss').placeholder = d.max_risk;
+        document.getElementById('tc-max-risk-val').textContent = d.max_risk.toLocaleString();
+    }
+
+    // Load trade log
+    loadTradeLog();
+}
+
+function closeTradeCard() {
+    document.getElementById('trade-card-panel').style.display = 'none';
+    document.getElementById('tc-final-confirm').style.display = 'none';
+}
+
+function validateTradeRisk() {
+    const maxLoss = parseFloat(document.getElementById('tc-max-loss').value) || 0;
+    const accountBal = (_checklistResult && _checklistResult.account_balance) || 16369;
+    const maxRisk = accountBal * 0.02;
+    const recommendedOutlay = (_checklistResult && _checklistResult.recommended_outlay) || 0;
+
+    const riskPct = maxLoss > 0 ? (maxLoss / accountBal * 100).toFixed(1) : '—';
+    document.getElementById('tc-risk-summary').innerHTML =
+        maxLoss > 0 ? `${riskPct}% of account` : '';
+
+    _tradeCardWarnings.risk = maxLoss > maxRisk;
+
+    const warnRisk = document.getElementById('tc-warning-risk');
+    warnRisk.style.display = _tradeCardWarnings.risk ? 'block' : 'none';
+
+    const hasWarnings = _tradeCardWarnings.outlay || _tradeCardWarnings.risk;
+    document.getElementById('tc-confirm-row').style.display = hasWarnings ? 'block' : 'none';
+}
+
+function submitTradeCard() {
+    // Validate required fields
+    const fields = {
+        contract:    document.getElementById('tc-contract').value.trim(),
+        thesis:      document.getElementById('tc-thesis').value.trim(),
+        t1_spx:      document.getElementById('tc-t1-spx').value,
+        t2_spx:      document.getElementById('tc-t2-spx').value,
+        t3_trail:    document.getElementById('tc-t3-trail').value,
+        stop_spx:    document.getElementById('tc-stop-spx').value,
+        stop_option: document.getElementById('tc-stop-option').value,
+    };
+
+    const missing = Object.entries(fields).filter(([k, v]) => !v).map(([k]) => k);
+    if (missing.length > 0) {
+        alert('Required fields missing: ' + missing.join(', '));
+        return;
+    }
+
+    // Check confirm override if warnings active
+    const hasWarnings = _tradeCardWarnings.outlay || _tradeCardWarnings.risk;
+    if (hasWarnings) {
+        const confirmVal = document.getElementById('tc-confirm-input').value.trim().toUpperCase();
+        if (confirmVal !== 'CONFIRM') {
+            alert('Type CONFIRM in the override field to proceed with warnings, or fix the risk/outlay values.');
+            return;
+        }
+    }
+
+    // Show final SUBMIT confirmation
+    document.getElementById('tc-final-confirm').style.display = 'block';
+    document.getElementById('tc-final-confirm').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function confirmSubmit() {
+    const submitVal = document.getElementById('tc-submit-input').value.trim().toUpperCase();
+    if (submitVal !== 'SUBMIT') {
+        alert('Type SUBMIT to log the trade, or Cancel to go back.');
+        return;
+    }
+
+    const card = {
+        contract:         document.getElementById('tc-contract').value.trim(),
+        direction:        document.getElementById('tc-direction').value,
+        entry_price:      parseFloat(document.getElementById('tc-entry-price').value) || null,
+        contracts:        parseInt(document.getElementById('tc-contracts').value) || 1,
+        entry_tier:       document.getElementById('tc-tier').value,
+        spx_at_entry:     parseFloat(document.getElementById('tc-spx-entry').value) || null,
+        thesis:           document.getElementById('tc-thesis').value.trim(),
+        t1_spx_level:     parseFloat(document.getElementById('tc-t1-spx').value) || null,
+        t2_spx_level:     parseFloat(document.getElementById('tc-t2-spx').value) || null,
+        t3_trail_points:  parseFloat(document.getElementById('tc-t3-trail').value) || null,
+        stop_spx_level:   parseFloat(document.getElementById('tc-stop-spx').value) || null,
+        stop_option_price: parseFloat(document.getElementById('tc-stop-option').value) || null,
+        add_trigger_1:    document.getElementById('tc-add1').value.trim(),
+        add_trigger_2:    document.getElementById('tc-add2').value.trim(),
+        max_loss_dollars: parseFloat(document.getElementById('tc-max-loss').value) || null,
+        checklist_score:  _checklistResult ? _checklistResult.score : null,
+        checklist_tier:   _checklistResult ? _checklistResult.tier : null,
+        symbol:           _checklistResult ? _checklistResult.symbol : '^GSPC',
+    };
+
+    try {
+        const res = await fetch('/api/trade-card', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(card)
+        });
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error);
+
+        // Clear form
+        document.getElementById('trade-card-panel').style.display = 'none';
+        document.getElementById('tc-final-confirm').style.display = 'none';
+        ['tc-contract','tc-entry-price','tc-contracts','tc-spx-entry','tc-thesis',
+         'tc-t1-spx','tc-t2-spx','tc-t3-trail','tc-stop-spx','tc-stop-option',
+         'tc-add1','tc-add2','tc-max-loss','tc-confirm-input','tc-submit-input'
+        ].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+
+        // Refresh trade log
+        loadTradeLog();
+        setStatus('Trade card logged — total trades: ' + d.total_trades);
+        alert('✓ Trade card logged to trade_log.json');
+
+    } catch (err) {
+        alert('Error saving trade card: ' + err.message);
+    }
+}
+
+async function loadTradeLog() {
+    try {
+        const res = await fetch('/api/trade-log');
+        const d = await res.json();
+        if (!d.success || !d.trades.length) return;
+
+        const panel = document.getElementById('trade-log-panel');
+        panel.style.display = 'block';
+
+        const rows = d.trades.map(t => `
+            <tr class="trade-log-row">
+                <td style="color:#484f58;">${t.date}</td>
+                <td><span style="color:${t.direction==='CALL'?'#3fb950':'#f47067'};">${t.direction}</span></td>
+                <td style="color:#e6edf3; font-weight:600;">${t.contract}</td>
+                <td>$${t.entry_price || '—'}</td>
+                <td style="color:#f47067;">${t.stop_spx || '—'}</td>
+                <td style="color:#3fb950;">${t.t1_spx || '—'}</td>
+                <td><span class="checklist-tier-badge ${t.tier==='STARTER'?'tier-starter':t.tier==='ADD'?'tier-add':t.tier==='FULL'?'tier-full':'tier-no-trade'}" style="font-size:9px; padding:2px 6px;">${t.tier}</span></td>
+                <td style="color:#d29922;">${t.score || '—'}</td>
+            </tr>`).join('');
+
+        document.getElementById('trade-log-content').innerHTML = `
+            <table style="width:100%;">
+                <thead>
+                    <tr style="font-size:10px; color:#484f58; text-transform:uppercase;">
+                        <th style="padding:4px 8px; text-align:left;">Date</th>
+                        <th style="padding:4px 8px; text-align:left;">Type</th>
+                        <th style="padding:4px 8px; text-align:left;">Contract</th>
+                        <th style="padding:4px 8px; text-align:left;">Entry</th>
+                        <th style="padding:4px 8px; text-align:left;">Stop SPX</th>
+                        <th style="padding:4px 8px; text-align:left;">T1 SPX</th>
+                        <th style="padding:4px 8px; text-align:left;">Tier</th>
+                        <th style="padding:4px 8px; text-align:left;">Score</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    } catch (err) {
+        // silently fail if no log yet
+    }
 }
 
 async function loadPrediction() {

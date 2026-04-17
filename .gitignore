@@ -26,3 +26,6 @@ Thumbs.db
 # Environment / secrets
 .env
 *.key
+
+# Trade log (personal trade history — not committed)
+trade_log.json

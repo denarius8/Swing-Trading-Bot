@@ -35,6 +35,8 @@ from net_premium import (auto_update_today, get_premium_table, update_manual_pre
                          fetch_net_premium_signal)
 from patterns import scan_universe, scan_patterns, PATTERN_REGISTRY
 from universe import get_universe, get_universe_info
+from scaled_checklist import run_checklist, ACCOUNT_CONFIG, SCORE_THRESHOLDS
+from trade_card import save_trade_card, get_recent_trades
 import yfinance as yf
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -824,6 +826,45 @@ def api_net_premium_update():
         return jsonify({"success": True, "entry": entry})
     except Exception as e:
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
+
+
+@app.route("/api/checklist")
+def api_checklist():
+    try:
+        from flask import request
+        symbol = request.args.get("symbol", "^GSPC").strip().upper()
+        if symbol == "SPX":
+            symbol = "^GSPC"
+        result = run_checklist(symbol)
+        result["success"] = True
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
+
+
+@app.route("/api/trade-card", methods=["POST"])
+def api_save_trade_card():
+    try:
+        from flask import request
+        card = request.get_json()
+        if not card:
+            return jsonify({"success": False, "error": "No trade card data received"})
+        result = save_trade_card(card)
+        result["success"] = True
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route("/api/trade-log")
+def api_trade_log():
+    try:
+        from flask import request
+        n = int(request.args.get("n", 20))
+        trades = get_recent_trades(n)
+        return jsonify({"success": True, "trades": trades, "total": len(trades)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 
 if __name__ == "__main__":
