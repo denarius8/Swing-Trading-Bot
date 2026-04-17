@@ -81,31 +81,38 @@ def api_predict():
         f = prediction["features"]
 
         raw_df = prediction["raw_df"]
+
+        # Start with cached values as fallback
         high_20 = float(raw_df["High"].tail(20).max())
         low_20 = float(raw_df["Low"].tail(20).min())
         prev_high = float(raw_df["High"].iloc[-1])
         prev_low = float(raw_df["Low"].iloc[-1])
-
-        # Always fetch fresh daily data to get the most recent close
         prev_close = float(raw_df["Close"].iloc[-1])
         prev_close_date = raw_df.index[-1]
         live_price = None
         live_change = None
         live_change_pct = None
+
         try:
-            fresh_daily = yf.download("^GSPC", period="5d", progress=False)
+            # Fetch 30 days of fresh daily data — refreshes ALL key levels, not just close
+            fresh_daily = yf.download("^GSPC", period="30d", progress=False)
             if fresh_daily is not None and not fresh_daily.empty:
                 if isinstance(fresh_daily.columns, pd.MultiIndex):
                     fresh_daily.columns = fresh_daily.columns.get_level_values(0)
-                # Use the latest daily close as prev_close (compare dates without timezone)
                 latest_date = fresh_daily.index[-1]
                 cached_date_naive = prev_close_date.tz_localize(None) if prev_close_date.tzinfo else prev_close_date
                 latest_date_naive = latest_date.tz_localize(None) if latest_date.tzinfo else latest_date
                 if latest_date_naive >= cached_date_naive:
+                    # Update close
                     prev_close = round(float(fresh_daily["Close"].iloc[-1]), 2)
                     prev_close_date = latest_date
+                    # Update High/Low key levels from fresh data
+                    prev_high = round(float(fresh_daily["High"].iloc[-1]), 2)
+                    prev_low = round(float(fresh_daily["Low"].iloc[-1]), 2)
+                    high_20 = round(float(fresh_daily["High"].tail(20).max()), 2)
+                    low_20 = round(float(fresh_daily["Low"].tail(20).min()), 2)
 
-            # Also fetch intraday for live price during market hours
+            # Fetch intraday for live price during market hours
             intra = yf.download("^GSPC", period="5d", interval="2m", progress=False)
             if intra is not None and not intra.empty:
                 if isinstance(intra.columns, pd.MultiIndex):
