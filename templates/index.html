@@ -2754,9 +2754,16 @@ async function loadConfluence() {
                                          rev.signal === 'ENTER SHORT' ? '#ff7b72' :
                                          rev.signal.includes('WATCH') ? '#d29922' : '#7d8590';
                         const regimeLabelColor = rev.regime === 'EXTREME' ? '#ff7b72' : rev.regime === 'ELEVATED' ? '#d29922' : '#484f58';
+                        const revBadgeStyle = rev.signal_class === 'enter-long'
+                            ? 'background:#0d4429;color:#3fb950;border:2px solid #238636;text-shadow:0 0 20px rgba(63,185,80,0.4);'
+                            : rev.signal_class === 'enter-short'
+                            ? 'background:#4a1111;color:#ff7b72;border:2px solid #f85149;text-shadow:0 0 20px rgba(248,81,73,0.4);'
+                            : (rev.signal_class === 'lean-bull' || rev.signal_class === 'lean-bear')
+                            ? 'background:#2d1f00;color:#e3b341;border:2px solid #d29922;text-shadow:0 0 20px rgba(210,153,34,0.4);'
+                            : 'background:#1c1e23;color:#7d8590;border:2px solid #30363d;';
                         return '<div style="border-left:1px solid #21262d; padding-left:24px;">'
                             + '<div style="font-size:10px; color:#484f58; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px;">Reversal Entry (6) &nbsp;<span style="color:' + regimeLabelColor + ';">' + rev.regime + '</span></div>'
-                            + '<div class="confluence-signal ' + rev.signal_class + '">' + rev.signal + '</div>'
+                            + '<div class="confluence-signal" style="' + revBadgeStyle + '">' + rev.signal + '</div>'
                             + '<div style="font-size:28px; font-weight:800; color:' + revColor + '; margin-top:4px;">' + rev.long_count + '/' + (rev.long_count + rev.short_count + rev.neutral_count) + '</div>'
                             + '<div style="color:#7d8590; font-size:11px; margin-top:2px;">'
                             + '<span style="color:#3fb950;">' + rev.long_count + '↑</span> &nbsp;'
