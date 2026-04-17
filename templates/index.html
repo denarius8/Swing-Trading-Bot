@@ -1666,6 +1666,15 @@ async function loadTicker() {
     }
 }
 
+// Restore saved account balance from localStorage
+(function() {
+    const saved = localStorage.getItem('checklist_account_balance');
+    if (saved) {
+        const el = document.getElementById('rc-account');
+        if (el) el.value = saved;
+    }
+})();
+
 // Load ticker on page load and refresh every 30 seconds
 loadTicker();
 tickerInterval = setInterval(loadTicker, 30000);
@@ -1714,7 +1723,9 @@ async function runChecklist() {
     setStatus('Running entry checklist...');
 
     try {
-        const res = await fetch('/api/checklist?symbol=' + encodeURIComponent(sym));
+        const balance = parseFloat(document.getElementById('rc-account').value) || 10000;
+        localStorage.setItem('checklist_account_balance', balance);
+        const res = await fetch('/api/checklist?symbol=' + encodeURIComponent(sym) + '&balance=' + balance);
         const d = await res.json();
         if (!d.success) throw new Error(d.error);
 
@@ -1853,7 +1864,7 @@ function closeTradeCard() {
 
 function validateTradeRisk() {
     const maxLoss = parseFloat(document.getElementById('tc-max-loss').value) || 0;
-    const accountBal = (_checklistResult && _checklistResult.account_balance) || 16369;
+    const accountBal = (_checklistResult && _checklistResult.account_balance) || parseFloat(document.getElementById('rc-account').value) || 10000;
     const maxRisk = accountBal * 0.02;
     const recommendedOutlay = (_checklistResult && _checklistResult.recommended_outlay) || 0;
 

@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore")
 # ─── Account & Score Configuration ───────────────────────────────────
 
 ACCOUNT_CONFIG = {
-    "balance": 16369,
+    "balance": 10000,           # Default — users set their own balance in the UI
     "max_risk_pct": 0.02,       # 2% max risk per trade
     "daily_stop_pct": 0.03,     # 3% daily stop-out
 }
@@ -410,7 +410,8 @@ def score_checklist(data):
         tier_class = "full"
         verdict = "100% outlay. All checks confirmed. Strongest setups only."
 
-    max_risk = round(ACCOUNT_CONFIG["balance"] * ACCOUNT_CONFIG["max_risk_pct"], 0)
+    balance = data.get("_account_balance", ACCOUNT_CONFIG["balance"])
+    max_risk = round(balance * ACCOUNT_CONFIG["max_risk_pct"], 0)
     recommended_outlay = round(max_risk / ACCOUNT_CONFIG["max_risk_pct"]
                                * TIER_OUTLAY_PCT.get(tier, 0) * ACCOUNT_CONFIG["max_risk_pct"], 0)
 
@@ -426,7 +427,7 @@ def score_checklist(data):
         "warnings":             warnings_list,
         "max_risk":             max_risk,
         "recommended_outlay":   recommended_outlay,
-        "account_balance":      ACCOUNT_CONFIG["balance"],
+        "account_balance":      balance,
         "raw_data":             {k: v for k, v in data.items() if k != "symbol"},
     }
 
@@ -502,7 +503,9 @@ def check_exit_triggers(option_pct_gain, rsi_1h, first_red_after_rsi,
 
 # ─── Main entry point ─────────────────────────────────────────────────
 
-def run_checklist(symbol="^GSPC"):
+def run_checklist(symbol="^GSPC", account_balance=None):
     """Fetch live data and return full scored checklist result."""
     data = fetch_checklist_data(symbol)
+    if account_balance is not None:
+        data["_account_balance"] = float(account_balance)
     return score_checklist(data)

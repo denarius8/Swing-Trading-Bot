@@ -882,7 +882,9 @@ def api_checklist():
         symbol = request.args.get("symbol", "^GSPC").strip().upper()
         if symbol == "SPX":
             symbol = "^GSPC"
-        result = run_checklist(symbol)
+        raw_balance = request.args.get("balance", None)
+        account_balance = float(raw_balance) if raw_balance else None
+        result = run_checklist(symbol, account_balance=account_balance)
         result["success"] = True
         return jsonify(result)
     except Exception as e:
