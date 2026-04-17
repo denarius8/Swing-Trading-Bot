@@ -691,6 +691,67 @@
             font-style: italic;
         }
 
+        /* ── Reversal Entry Panel ───────────────────────────── */
+        .dual-panel-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-top: 24px;
+        }
+        @media (max-width: 1100px) {
+            .dual-panel-grid { grid-template-columns: 1fr; }
+        }
+        .reversal-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .regime-badge {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            padding: 2px 8px;
+            border-radius: 20px;
+        }
+        .regime-normal   { background: #21262d; color: #7d8590; }
+        .regime-elevated { background: #2a2000; color: #d29922; border: 1px solid #d2992244; }
+        .regime-extreme  { background: #4a1111; color: #ff7b72; border: 1px solid #f8514966; }
+        .reversal-signal-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 14px 16px 4px;
+            padding: 10px 14px;
+            background: #161b22;
+            border-radius: 6px;
+            border-left: 3px solid #30363d;
+        }
+        .reversal-signal-bar.enter-long  { border-left-color: #3fb950; background: #0d2419; }
+        .reversal-signal-bar.enter-short { border-left-color: #ff7b72; background: #2a1111; }
+        .reversal-signal-bar.lean-bull   { border-left-color: #d29922; background: #1a1500; }
+        .reversal-signal-bar.lean-bear   { border-left-color: #d29922; background: #1a1500; }
+        .reversal-signal-bar.no-signal   { border-left-color: #30363d; }
+        .reversal-score-dots {
+            display: flex;
+            gap: 3px;
+        }
+        .reversal-dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+        }
+        .reversal-dot.long    { background: #3fb950; }
+        .reversal-dot.short   { background: #ff7b72; }
+        .reversal-dot.neutral { background: #30363d; }
+        .reversal-regime-note {
+            font-size: 10px;
+            color: #484f58;
+            padding: 0 16px 10px;
+            font-style: italic;
+        }
+
         .scan-ticker-row {
             display: grid;
             grid-template-columns: 80px 90px 70px 70px 130px 60px 60px 1fr;
@@ -2485,6 +2546,83 @@ function buildConfidenceDetails(details) {
     return html;
 }
 
+function buildDualIndicatorPanel(data, indicatorRows) {
+    // ── Reversal panel ────────────────────────────────────────────────
+    let reversalHtml = '';
+    const rev = data.reversal;
+    if (rev) {
+        // Score dots (6 dots)
+        let dots = '';
+        for (let i = 0; i < rev.long_count;    i++) dots += '<div class="reversal-dot long"></div>';
+        for (let i = 0; i < rev.neutral_count; i++) dots += '<div class="reversal-dot neutral"></div>';
+        for (let i = 0; i < rev.short_count;   i++) dots += '<div class="reversal-dot short"></div>';
+
+        const revSigColor = rev.signal === 'ENTER LONG'   ? '#3fb950' :
+                            rev.signal === 'ENTER SHORT'  ? '#ff7b72' :
+                            rev.signal.includes('WATCH')  ? '#d29922' : '#7d8590';
+        const revSigClass = rev.signal_class || 'no-signal';
+
+        // Reversal indicator rows
+        let revRows = '';
+        rev.scores.forEach(function(s) {
+            const iconClass = s.score === 1 ? 'bull' : s.score === -1 ? 'bear' : 'neutral';
+            const icon      = s.score === 1 ? '&#x2191;' : s.score === -1 ? '&#x2193;' : '&#x2022;';
+            revRows += '<div class="indicator-row">'
+                + '<div class="indicator-icon ' + iconClass + '">' + icon + '</div>'
+                + '<div class="indicator-info">'
+                + '<div class="indicator-name">' + s.label + '</div>'
+                + '<div class="indicator-detail">' + s.detail + '</div>'
+                + '</div>'
+                + '<div class="indicator-reason">' + s.reason + '</div>'
+                + '</div>';
+        });
+
+        const threshold = rev.threshold || 4;
+        reversalHtml = `
+            <div class="card">
+                <div class="card-title reversal-panel-header">
+                    <span>Reversal Entry — 6 Indicators</span>
+                    <span class="regime-badge ${rev.regime_class}">${rev.regime}</span>
+                </div>
+                <div class="reversal-regime-note">${rev.regime_note}</div>
+                ${revRows}
+                <div class="reversal-signal-bar ${revSigClass}">
+                    <div class="reversal-score-dots">${dots}</div>
+                    <div>
+                        <div style="font-size:13px; font-weight:700; color:${revSigColor};">${rev.signal}</div>
+                        <div style="font-size:10px; color:#7d8590;">${rev.long_count} long / ${rev.short_count} short / ${rev.neutral_count} neutral &nbsp;(need ${threshold}/6)</div>
+                    </div>
+                </div>
+                <div style="font-size:10px; color:#484f58; padding:6px 16px 12px; line-height:1.6;">
+                    <strong style="color:#7d8590;">How to use:</strong>
+                    Reversal signals fire independently of the trend system. They catch capitulation bottoms and overbought tops
+                    that trend indicators miss. Use in combination with the 10-indicator reading above.
+                    When the trend system says NO SIGNAL but reversal shows ENTER LONG at ${threshold}/6 — that is your setup.
+                </div>
+            </div>`;
+    } else {
+        reversalHtml = `
+            <div class="card">
+                <div class="card-title">Reversal Entry — 6 Indicators</div>
+                <div style="padding:24px; text-align:center; color:#484f58; font-size:12px;">No reversal data available.</div>
+            </div>`;
+    }
+
+    return `
+        <div class="dual-panel-grid">
+            <div class="card">
+                <div class="card-title">Trend Confluence — 10 Indicators</div>
+                ${indicatorRows}
+                <div style="font-size:10px; color:#484f58; padding:8px 16px 12px; line-height:1.6; border-top:1px solid #21262d; margin-top:4px;">
+                    <strong style="color:#7d8590;">Signal fires at ${data.threshold}/10.</strong>
+                    These are trend-following indicators — they confirm existing momentum.
+                    They will lag at major reversals by design. Use the Reversal panel to the right for turning points.
+                </div>
+            </div>
+            ${reversalHtml}
+        </div>`;
+}
+
 async function loadConfluence() {
     switchTab('confluence');
     document.getElementById('confluence-loading').style.display = 'block';
@@ -2604,22 +2742,7 @@ async function loadConfluence() {
 
             <div id="net-premium-section"></div>
 
-            <div class="card" style="margin-top:24px;">
-                <div class="card-title">10 Confluence Indicators</div>
-                ${indicatorRows}
-            </div>
-
-            <div class="card" style="margin-top:16px;">
-                <div class="card-title">How It Works</div>
-                <div style="font-size:12px; color:#7d8590; line-height:1.8; padding:8px 16px;">
-                    This system checks <strong style="color:#e6edf3;">10 independent indicators</strong> for alignment.
-                    A signal only fires when <strong style="color:#e6edf3;">${data.threshold}+ out of 10</strong> agree on direction.<br><br>
-                    <strong style="color:#3fb950;">ENTER LONG</strong> = ${data.threshold}+ indicators are bullish &mdash; look for long/call entries<br>
-                    <strong style="color:#ff7b72;">ENTER SHORT</strong> = ${data.threshold}+ indicators are bearish &mdash; look for short/put entries<br>
-                    <strong style="color:#7d8590;">NO SIGNAL</strong> = Indicators are mixed &mdash; stay flat, wait for confluence<br><br>
-                    <em>The power is in patience. No signal = no trade. Only enter when the stars align.</em>
-                </div>
-            </div>
+            ${buildDualIndicatorPanel(data, indicatorRows)}
         `;
 
         document.getElementById('confluence-loading').style.display = 'none';

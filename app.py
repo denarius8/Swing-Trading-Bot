@@ -373,6 +373,19 @@ def api_confluence():
         except Exception:
             pass
 
+        # Serialize reversal scores the same way
+        reversal_scores_list = []
+        if result.get("reversal"):
+            rev = result["reversal"]
+            for key, val in rev["scores"].items():
+                reversal_scores_list.append({
+                    "id":     key,
+                    "score":  val["score"],
+                    "label":  val["label"],
+                    "detail": val["detail"],
+                    "reason": val["reason"],
+                })
+
         resp = {
             "success": True,
             "symbol": "SPX",
@@ -392,6 +405,21 @@ def api_confluence():
             resp["live"] = live
         if result.get("confidence"):
             resp["confidence"] = result["confidence"]
+        if result.get("reversal"):
+            rev = result["reversal"]
+            resp["reversal"] = {
+                "signal":        rev["signal"],
+                "signal_class":  rev["signal_class"],
+                "long_count":    rev["long_count"],
+                "short_count":   rev["short_count"],
+                "neutral_count": rev["neutral_count"],
+                "regime":        rev["regime"],
+                "regime_class":  rev["regime_class"],
+                "regime_note":   rev["regime_note"],
+                "vix":           rev["vix"],
+                "threshold":     rev["threshold"],
+                "scores":        reversal_scores_list,
+            }
         return jsonify(resp)
     except Exception as e:
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})

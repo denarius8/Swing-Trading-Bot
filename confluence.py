@@ -2,8 +2,14 @@
 Confluence-Based Swing Trade Signal Engine
 Scans any ticker for alignment of 10 high-conviction indicators.
 Only fires ENTER LONG / ENTER SHORT when 7+ indicators align.
+
+Also includes a parallel Reversal Entry panel (6 indicators) that
+fires independently of the trend system — catches capitulation bottoms
+and overbought tops that the trend system misses.
 """
 
+import os
+import json
 import numpy as np
 import pandas as pd
 import ta
@@ -153,7 +159,328 @@ def _calculate_indicators(df):
     ret_5d = close.pct_change(5)
     d["change_5d"] = float(ret_5d.iloc[-1]) if not np.isnan(ret_5d.iloc[-1]) else 0
 
+    # Where today's close sits within the day's high-low range (0 = at low, 1 = at high)
+    # Used by the reversal candle detector
+    day_high = float(high.iloc[-1])
+    day_low  = float(low.iloc[-1])
+    day_range = day_high - day_low
+    d["close_range_pct"] = (price - day_low) / day_range if day_range > 0 else 0.5
+    d["day_high"] = day_high
+    d["day_low"]  = day_low
+
     return d
+
+
+# ─── Reversal Entry Helpers ───────────────────────────────────────────────────
+
+def _get_vix():
+    """Fetch current VIX closing level."""
+    try:
+        vix = yf.Ticker("^VIX").history(period="3d")
+        if not vix.empty:
+            return round(float(vix["Close"].iloc[-1]), 1)
+    except Exception:
+        pass
+    return None
+
+
+def _get_net_premium_data():
+    """
+    Read the last two net premium entries from cache.
+    Returns (latest_np, prev_np, streak_direction) or (None, None, None).
+    Does NOT trigger a live calculation — reads cache only (fast).
+    """
+    try:
+        cache_path = os.path.join("cache", "net_premium.json")
+        if not os.path.exists(cache_path):
+            return None, None, None
+        with open(cache_path) as f:
+            data = json.load(f)
+        history = data.get("history", [])
+        if not history:
+            return None, None, None
+
+        latest_np = history[0].get("net_premium")
+        prev_np   = history[1].get("net_premium") if len(history) >= 2 else None
+
+        # Streak direction (how many consecutive days in the same sign)
+        streak_dir = None
+        for entry in history:
+            np_val = entry.get("net_premium")
+            if np_val is None:
+                break
+            sign = "positive" if np_val > 0 else "negative"
+            if streak_dir is None:
+                streak_dir = sign
+            elif sign != streak_dir:
+                break
+
+        return latest_np, prev_np, streak_dir
+    except Exception:
+        return None, None, None
+
+
+# ─── Reversal Entry Scoring ───────────────────────────────────────────────────
+
+REVERSAL_THRESHOLD = 4   # Need 4/6 indicators for a reversal signal
+
+
+def score_reversal(indicators, vix=None, net_premium_data=None):
+    """
+    Score 6 reversal-specific indicators that fire independently of the
+    main 10-indicator trend system.
+
+    Designed to catch:
+      - Capitulation bottoms (all trend indicators still bearish at the low)
+      - Overbought tops (all trend indicators still bullish at the high)
+
+    Returns dict with scores, signal, and regime classification.
+    """
+    price  = indicators["price"]
+    sma200 = indicators["sma200"]
+    rsi    = indicators["rsi"]
+
+    # ── Regime Detection ─────────────────────────────────────────────
+    below_200_pct = (sma200 - price) / sma200 * 100 if sma200 > 0 else 0
+    above_200_pct = (price - sma200) / sma200 * 100 if sma200 > 0 else 0
+
+    vix_extreme  = vix is not None and vix > 35
+    vix_elevated = vix is not None and vix > 28
+    price_oversold    = below_200_pct > 7
+    price_overbought  = above_200_pct > 10
+    rsi_extreme_low   = rsi < 35
+    rsi_extreme_high  = rsi > 65
+
+    if vix_extreme or below_200_pct > 15:
+        regime = "EXTREME"
+        regime_class = "regime-extreme"
+        regime_note = "Crisis-level readings — reversal entries highest priority"
+    elif vix_elevated or price_oversold or price_overbought or rsi_extreme_low or rsi_extreme_high:
+        regime = "ELEVATED"
+        regime_class = "regime-elevated"
+        regime_note = "Extended market — reversal signals are actionable"
+    else:
+        regime = "NORMAL"
+        regime_class = "regime-normal"
+        regime_note = "Normal market — reversal signals are informational"
+
+    scores = {}
+
+    # ── 1. RSI Extreme (broader zone: <35 LONG, >65 SHORT) ───────────
+    if rsi < 35:
+        scores["rsi_extreme"] = {
+            "score": 1,
+            "label": "RSI Extreme Oversold",
+            "detail": f"RSI: {rsi:.1f} — below 35 (deeply oversold)",
+            "reason": "Broad oversold zone signals exhausted selling — reversal probability high",
+        }
+    elif rsi > 65:
+        scores["rsi_extreme"] = {
+            "score": -1,
+            "label": "RSI Extreme Overbought",
+            "detail": f"RSI: {rsi:.1f} — above 65 (deeply overbought)",
+            "reason": "Broad overbought zone signals exhausted buying — pullback probability high",
+        }
+    else:
+        scores["rsi_extreme"] = {
+            "score": 0,
+            "label": "RSI Neutral Zone",
+            "detail": f"RSI: {rsi:.1f} (35–65 range)",
+            "reason": "RSI not at an extreme — no reversal pressure from momentum",
+        }
+
+    # ── 2. Stochastic Extreme (broader: <25 LONG, >75 SHORT) ─────────
+    sk = indicators["stoch_k"]
+    sd = indicators["stoch_d"]
+    if sk < 25:
+        scores["stoch_extreme"] = {
+            "score": 1,
+            "label": "Stochastic Deep Oversold",
+            "detail": f"%K: {sk:.1f} / %D: {sd:.1f} — below 25",
+            "reason": "Stochastic at extreme oversold — sellers exhausted, bounce typically follows",
+        }
+    elif sk > 75:
+        scores["stoch_extreme"] = {
+            "score": -1,
+            "label": "Stochastic Deep Overbought",
+            "detail": f"%K: {sk:.1f} / %D: {sd:.1f} — above 75",
+            "reason": "Stochastic at extreme overbought — buyers exhausted, fade setup",
+        }
+    else:
+        scores["stoch_extreme"] = {
+            "score": 0,
+            "label": "Stochastic Neutral",
+            "detail": f"%K: {sk:.1f} / %D: {sd:.1f}",
+            "reason": "Stochastic in neutral zone — no extreme reading",
+        }
+
+    # ── 3. Bollinger Extreme (NO expansion check — fixed crash bias) ──
+    bb_pct = indicators["bb_pct"]
+    if bb_pct < 0.15:
+        scores["bb_extreme"] = {
+            "score": 1,
+            "label": "At/Below Lower Bollinger Band",
+            "detail": f"BB%: {bb_pct:.1%} — at or below lower band",
+            "reason": "Price at statistical extreme low — mean reversion expected regardless of trend",
+        }
+    elif bb_pct > 0.85:
+        scores["bb_extreme"] = {
+            "score": -1,
+            "label": "At/Above Upper Bollinger Band",
+            "detail": f"BB%: {bb_pct:.1%} — at or above upper band",
+            "reason": "Price at statistical extreme high — mean reversion expected regardless of trend",
+        }
+    else:
+        scores["bb_extreme"] = {
+            "score": 0,
+            "label": "BB Mid-Range",
+            "detail": f"BB%: {bb_pct:.1%}",
+            "reason": "Price within Bollinger Bands — no statistical extreme",
+        }
+
+    # ── 4. Net Premium (institutional options flow) ───────────────────
+    if net_premium_data:
+        latest_np, prev_np, streak_dir = net_premium_data
+    else:
+        latest_np = prev_np = streak_dir = None
+
+    if latest_np is not None:
+        np_b = latest_np / 1e9
+        reversed_pos = prev_np is not None and prev_np < 0 and latest_np > 0
+        reversed_neg = prev_np is not None and prev_np > 0 and latest_np < 0
+
+        if latest_np > 0:
+            reversal_tag = " — Reversed from negative!" if reversed_pos else ""
+            scores["net_premium"] = {
+                "score": 1,
+                "label": f"Net Premium Positive{reversal_tag}",
+                "detail": f"NP: ${np_b:.2f}B ({streak_dir} streak)",
+                "reason": "Positive net premium = call buying dominant — institutional money is long",
+            }
+        else:
+            reversal_tag = " — Reversed from positive!" if reversed_neg else ""
+            scores["net_premium"] = {
+                "score": -1,
+                "label": f"Net Premium Negative{reversal_tag}",
+                "detail": f"NP: ${np_b:.2f}B ({streak_dir} streak)",
+                "reason": "Negative net premium = put buying dominant — institutional money is hedging/short",
+            }
+    else:
+        scores["net_premium"] = {
+            "score": 0,
+            "label": "Net Premium — No Data",
+            "detail": "Load Confluence tab → Net Premium section to populate",
+            "reason": "No net premium history in cache. Run /api/net-premium to calculate.",
+        }
+
+    # ── 5. VIX Regime ─────────────────────────────────────────────────
+    if vix is not None:
+        if vix > 35:
+            scores["vix_regime"] = {
+                "score": 1,
+                "label": f"VIX Panic Zone ({vix:.1f})",
+                "detail": f"VIX: {vix:.1f} — historically marks generational buy zones",
+                "reason": "VIX above 35 = extreme fear/panic. Historically within days of major bottoms",
+            }
+        elif vix > 28:
+            scores["vix_regime"] = {
+                "score": 1,
+                "label": f"VIX Elevated ({vix:.1f})",
+                "detail": f"VIX: {vix:.1f} — above 28 = capitulation zone",
+                "reason": "Elevated VIX signals market fear — contrarian long setup when price stabilizes",
+            }
+        elif vix < 14:
+            scores["vix_regime"] = {
+                "score": -1,
+                "label": f"VIX Complacency ({vix:.1f})",
+                "detail": f"VIX: {vix:.1f} — below 14 = extreme complacency",
+                "reason": "Very low VIX = no fear priced in — markets vulnerable, fade extended rallies",
+            }
+        else:
+            scores["vix_regime"] = {
+                "score": 0,
+                "label": f"VIX Normal ({vix:.1f})",
+                "detail": f"VIX: {vix:.1f} — normal range (14–28)",
+                "reason": "VIX in normal range — no extreme fear or complacency signal",
+            }
+    else:
+        scores["vix_regime"] = {
+            "score": 0,
+            "label": "VIX — Unavailable",
+            "detail": "Could not fetch VIX",
+            "reason": "VIX data unavailable",
+        }
+
+    # ── 6. Volume Reversal Candle ─────────────────────────────────────
+    vol_ratio  = indicators["vol_ratio"]
+    chg1d      = indicators["change_1d"]
+    close_rng  = indicators.get("close_range_pct", 0.5)
+
+    # Bullish reversal: elevated vol + up day + strong close (top 40% of range)
+    if vol_ratio > 1.1 and chg1d > 0 and close_rng >= 0.40:
+        scores["reversal_candle"] = {
+            "score": 1,
+            "label": "Bullish Reversal Candle",
+            "detail": f"Vol {vol_ratio:.1f}× | +{chg1d*100:.1f}% | closed {close_rng:.0%} up in range",
+            "reason": "High-volume up day closing strong — buyers absorbed all sellers, reversal confirmed",
+        }
+    # Bearish reversal: elevated vol + down day + weak close (bottom 40% of range)
+    elif vol_ratio > 1.1 and chg1d < 0 and close_rng <= 0.40:
+        scores["reversal_candle"] = {
+            "score": -1,
+            "label": "Bearish Reversal Candle",
+            "detail": f"Vol {vol_ratio:.1f}× | {chg1d*100:.1f}% | closed {close_rng:.0%} in range",
+            "reason": "High-volume down day closing weak — sellers overwhelmed all buyers, breakdown confirmed",
+        }
+    elif vol_ratio > 1.3:
+        scores["reversal_candle"] = {
+            "score": 0,
+            "label": "High Volume — No Clear Close",
+            "detail": f"Vol {vol_ratio:.1f}× | {chg1d*100:+.1f}% | closed {close_rng:.0%} in range",
+            "reason": "Elevated volume but close mid-range — indecision. Watch next candle for direction",
+        }
+    else:
+        scores["reversal_candle"] = {
+            "score": 0,
+            "label": "Normal Volume — No Reversal Candle",
+            "detail": f"Vol {vol_ratio:.1f}× | {chg1d*100:+.1f}%",
+            "reason": "Volume not elevated enough to confirm institutional reversal activity",
+        }
+
+    # ── Totals & Signal ───────────────────────────────────────────────
+    long_count    = sum(1 for s in scores.values() if s["score"] == 1)
+    short_count   = sum(1 for s in scores.values() if s["score"] == -1)
+    neutral_count = sum(1 for s in scores.values() if s["score"] == 0)
+
+    if long_count >= REVERSAL_THRESHOLD:
+        signal = "ENTER LONG"
+        signal_class = "enter-long"
+    elif short_count >= REVERSAL_THRESHOLD:
+        signal = "ENTER SHORT"
+        signal_class = "enter-short"
+    elif long_count == 3:
+        signal = "WATCH LONG"
+        signal_class = "lean-bull"
+    elif short_count == 3:
+        signal = "WATCH SHORT"
+        signal_class = "lean-bear"
+    else:
+        signal = "NO SIGNAL"
+        signal_class = "no-signal"
+
+    return {
+        "scores": scores,
+        "long_count":    long_count,
+        "short_count":   short_count,
+        "neutral_count": neutral_count,
+        "signal":        signal,
+        "signal_class":  signal_class,
+        "regime":        regime,
+        "regime_class":  regime_class,
+        "regime_note":   regime_note,
+        "vix":           vix,
+        "threshold":     REVERSAL_THRESHOLD,
+    }
 
 
 def score_confluence(indicators):
@@ -629,8 +956,11 @@ def analyze_exit(symbol, position_type, entry_price):
         return None
 
 
-def analyze_ticker(symbol):
-    """Full confluence analysis for a single ticker."""
+def analyze_ticker(symbol, include_reversal=False):
+    """Full confluence analysis for a single ticker.
+    Pass include_reversal=True to also run the reversal entry panel
+    (fetches VIX + reads NP cache — adds ~1s for SPX).
+    """
     df = _fetch_ticker_data(symbol)
     if df is None or len(df) < 50:
         return None
@@ -646,8 +976,14 @@ def analyze_ticker(symbol):
         result["adx"] = round(indicators["adx"], 1)
         result["vol_ratio"] = round(indicators["vol_ratio"], 2)
         result["timestamp"] = datetime.now().strftime("%H:%M:%S")
+
+        if include_reversal:
+            vix = _get_vix()
+            np_data = _get_net_premium_data()
+            result["reversal"] = score_reversal(indicators, vix=vix, net_premium_data=np_data)
+
         return result
-    except Exception as e:
+    except Exception:
         return None
 
 
@@ -673,8 +1009,8 @@ def scan_watchlist(symbols=None):
 
 
 def analyze_ticker_with_confidence(symbol):
-    """Full confluence analysis + confidence overlay from leading indicators."""
-    result = analyze_ticker(symbol)
+    """Full confluence analysis + confidence overlay + reversal panel."""
+    result = analyze_ticker(symbol, include_reversal=True)
     if result is None:
         return None
 
