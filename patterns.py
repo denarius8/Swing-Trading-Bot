@@ -677,15 +677,504 @@ def detect_livermore_breakout(df):
 
 
 # ---------------------------------------------------------------------------
+# Pattern Detectors - Phase 2
+# ---------------------------------------------------------------------------
+
+def detect_stage1_base(df):
+    """
+    Weinstein Stage 1 Base.
+    30-week MA flattening, price consolidating above it, volume quiet.
+    Uses daily data: 150-day MA as proxy for 30-week.
+    """
+    result = {"pattern": "Stage 1 Base", "detected": False, "direction": "LONG"}
+
+    if len(df) < 150:
+        return result
+
+    close = df["Close"].values
+    volume = df["Volume"].values
+    price = close[-1]
+
+    ma150 = pd.Series(close).rolling(150).mean().values
+    ma50  = pd.Series(close).rolling(50).mean().values
+
+    ma150_now  = ma150[-1]
+    ma150_prev = ma150[-20]   # 4 weeks ago
+
+    if np.isnan(ma150_now) or np.isnan(ma150_prev):
+        return result
+
+    # Stage 1: 150-day MA must be flattening (< 2% change in 20 days)
+    ma_slope_pct = abs(ma150_now - ma150_prev) / ma150_prev * 100
+    if ma_slope_pct > 2.5:
+        return result
+
+    # Price must be near or above the 150 MA (within 10%)
+    if price < ma150_now * 0.90 or price > ma150_now * 1.20:
+        return result
+
+    # Price should be below the 52-week high (still basing, not broken out)
+    high_52w = max(df["High"].values[-252:]) if len(df) >= 252 else max(df["High"].values)
+    if price > high_52w * 0.95:
+        return result  # Already at highs — not a base
+
+    # Volume contracting (quiet accumulation)
+    vol_recent = np.mean(volume[-20:])
+    vol_earlier = np.mean(volume[-60:-20])
+    vol_ratio = vol_recent / vol_earlier if vol_earlier > 0 else 1.0
+
+    # Grade scoring
+    score = 0
+    max_score = 6
+
+    # MA flat
+    if ma_slope_pct < 1.0:
+        score += 2
+    elif ma_slope_pct < 2.0:
+        score += 1
+
+    # Price above MA (bullish structure)
+    if price > ma150_now:
+        score += 1
+
+    # MA50 also flattening / turning up
+    ma50_slope = abs(ma50[-1] - ma50[-10]) / ma50[-10] * 100 if not np.isnan(ma50[-10]) else 99
+    if ma50_slope < 1.5:
+        score += 1
+
+    # Volume contraction
+    if vol_ratio < 0.75:
+        score += 1.5
+    elif vol_ratio < 0.90:
+        score += 0.75
+
+    if score < 2.5:
+        return result
+
+    stop = ma150_now * 0.95
+    target = high_52w
+    rr = (target - price) / (price - stop) if price > stop else 0
+
+    result.update({
+        "detected": True,
+        "grade": _grade_score(score, max_score),
+        "details": {
+            "ma150": round(ma150_now, 2),
+            "ma_slope_pct": round(ma_slope_pct, 2),
+            "price_vs_ma150_pct": round((price - ma150_now) / ma150_now * 100, 1),
+            "vol_ratio": round(vol_ratio, 2),
+            "pct_from_52w_high": round((high_52w - price) / high_52w * 100, 1),
+        },
+        "entry_zone": [round(price, 2), round(high_52w * 0.95, 2)],
+        "stop_loss": round(stop, 2),
+        "target": round(high_52w, 2),
+        "risk_reward": round(rr, 1),
+    })
+    return result
+
+
+def detect_parabolic_short(df):
+    """
+    Parabolic Short Setup.
+    Price extended >2 std devs above 50 SMA, RSI >75 — mean reversion short.
+    """
+    result = {"pattern": "Parabolic Short", "detected": False, "direction": "SHORT"}
+
+    if len(df) < 50:
+        return result
+
+    close = df["Close"].values
+    high  = df["High"].values
+    price = close[-1]
+
+    sma50 = np.mean(close[-50:])
+    std50 = np.std(close[-50:])
+
+    # Price must be >2 std devs above 50 SMA
+    z_score = (price - sma50) / std50 if std50 > 0 else 0
+    if z_score < 2.0:
+        return result
+
+    # RSI overbought
+    rsi = ta.momentum.rsi(pd.Series(close), window=14).values
+    rsi_val = float(rsi[-1]) if not np.isnan(rsi[-1]) else 50
+    if rsi_val < 70:
+        return result
+
+    # Volume spike on recent candles (blow-off top)
+    vol = df["Volume"].values
+    vol_avg = np.mean(vol[-20:])
+    vol_recent = np.mean(vol[-3:])
+    vol_spike = vol_recent / vol_avg if vol_avg > 0 else 1.0
+
+    # Recent candle showing exhaustion (upper wick > body)
+    last_open  = df["Open"].values[-1]
+    last_close = close[-1]
+    last_high  = high[-1]
+    body = abs(last_close - last_open)
+    upper_wick = last_high - max(last_close, last_open)
+    exhaustion = upper_wick > body * 0.5
+
+    # Grade scoring
+    score = 0
+    max_score = 6
+
+    if z_score >= 3.0:
+        score += 2
+    elif z_score >= 2.5:
+        score += 1.5
+    else:
+        score += 1
+
+    if rsi_val >= 80:
+        score += 1.5
+    elif rsi_val >= 75:
+        score += 1
+
+    if vol_spike > 2.0:
+        score += 1.5
+    elif vol_spike > 1.5:
+        score += 1
+
+    if exhaustion:
+        score += 1
+
+    if score < 3.0:
+        return result
+
+    stop = max(high[-5:]) * 1.01       # Stop above recent 5-day high
+    target = sma50                      # Revert to 50 SMA
+    rr = (price - target) / (stop - price) if stop > price else 0
+
+    result.update({
+        "detected": True,
+        "grade": _grade_score(score, max_score),
+        "details": {
+            "z_score": round(z_score, 2),
+            "sma50": round(sma50, 2),
+            "rsi": round(rsi_val, 1),
+            "vol_spike": round(vol_spike, 2),
+            "exhaustion_candle": bool(exhaustion),
+            "pct_above_sma50": round((price - sma50) / sma50 * 100, 1),
+        },
+        "entry_zone": [round(price * 0.99, 2), round(price, 2)],
+        "stop_loss": round(stop, 2),
+        "target": round(target, 2),
+        "risk_reward": round(rr, 1),
+    })
+    return result
+
+
+def detect_close_to_bottom(df):
+    """
+    Close to Bottom / Reversal Setup.
+    Within 10-15% of 52-week low with early signs of reversal.
+    """
+    result = {"pattern": "Close to Bottom", "detected": False, "direction": "LONG"}
+
+    if len(df) < 60:
+        return result
+
+    close  = df["Close"].values
+    low    = df["Low"].values
+    volume = df["Volume"].values
+    price  = close[-1]
+
+    low_52w = min(low[-252:]) if len(df) >= 252 else min(low)
+    high_52w = max(df["High"].values[-252:]) if len(df) >= 252 else max(df["High"].values)
+
+    dist_from_low = (price - low_52w) / low_52w * 100
+
+    # Must be within 15% of 52-week low
+    if dist_from_low > 15:
+        return result
+
+    # Must not already be at the low (need a small bounce)
+    if dist_from_low < 0.5:
+        return result
+
+    # RSI must be oversold or recovering from oversold
+    rsi = ta.momentum.rsi(pd.Series(close), window=14).values
+    rsi_val = float(rsi[-1]) if not np.isnan(rsi[-1]) else 50
+    if rsi_val > 45:
+        return result
+
+    # Volume: recent pickup vs prior week (accumulation signal)
+    vol_recent = np.mean(volume[-5:])
+    vol_prior  = np.mean(volume[-20:-5])
+    vol_ratio  = vol_recent / vol_prior if vol_prior > 0 else 1.0
+
+    # Price action: recent candle is up day (close > open)
+    up_day = close[-1] > df["Open"].values[-1]
+
+    # Grade scoring
+    score = 0
+    max_score = 6
+
+    # Proximity to low (closer = higher urgency)
+    if dist_from_low < 5:
+        score += 2
+    elif dist_from_low < 10:
+        score += 1.5
+    else:
+        score += 1
+
+    # RSI deeply oversold
+    if rsi_val < 25:
+        score += 1.5
+    elif rsi_val < 35:
+        score += 1
+
+    # Volume pickup (accumulation)
+    if vol_ratio > 1.5:
+        score += 1.5
+    elif vol_ratio > 1.2:
+        score += 0.75
+
+    # Up day candle
+    if up_day:
+        score += 0.5
+
+    if score < 3.0:
+        return result
+
+    stop = low_52w * 0.97
+    target = price * 1.15   # 15% recovery target
+    rr = (target - price) / (price - stop) if price > stop else 0
+
+    result.update({
+        "detected": True,
+        "grade": _grade_score(score, max_score),
+        "details": {
+            "low_52w": round(low_52w, 2),
+            "dist_from_52w_low_pct": round(dist_from_low, 1),
+            "rsi": round(rsi_val, 1),
+            "vol_ratio": round(vol_ratio, 2),
+            "up_day": bool(up_day),
+        },
+        "entry_zone": [round(price, 2), round(price * 1.02, 2)],
+        "stop_loss": round(stop, 2),
+        "target": round(target, 2),
+        "risk_reward": round(rr, 1),
+    })
+    return result
+
+
+def detect_bx_momentum(df):
+    """
+    BX Momentum Setup.
+    ADX >25 confirming trend strength, EMA stack aligned, momentum building.
+    """
+    result = {"pattern": "BX Momentum", "detected": False, "direction": "LONG"}
+
+    if len(df) < 50:
+        return result
+
+    close  = df["Close"].values
+    high   = df["High"].values
+    low    = df["Low"].values
+    volume = df["Volume"].values
+    price  = close[-1]
+
+    # EMA stack: 8 > 21 > 50
+    ema8  = pd.Series(close).ewm(span=8,  adjust=False).mean().values
+    ema21 = pd.Series(close).ewm(span=21, adjust=False).mean().values
+    ema50 = pd.Series(close).ewm(span=50, adjust=False).mean().values
+
+    stack_aligned = price > ema8[-1] > ema21[-1] > ema50[-1]
+    if not stack_aligned:
+        # Check SHORT: price < ema8 < ema21 < ema50
+        short_stack = price < ema8[-1] < ema21[-1] < ema50[-1]
+        if short_stack:
+            result["direction"] = "SHORT"
+        else:
+            return result
+
+    direction = result["direction"]
+
+    # ADX > 25 (strong trend)
+    adx_series = ta.trend.ADXIndicator(
+        pd.Series(high), pd.Series(low), pd.Series(close), window=14
+    )
+    adx_val = float(adx_series.adx().iloc[-1])
+    if np.isnan(adx_val) or adx_val < 20:
+        return result
+
+    # RSI momentum: 50-70 for long, 30-50 for short
+    rsi = ta.momentum.rsi(pd.Series(close), window=14).values
+    rsi_val = float(rsi[-1]) if not np.isnan(rsi[-1]) else 50
+
+    if direction == "LONG" and not (45 <= rsi_val <= 75):
+        return result
+    if direction == "SHORT" and not (25 <= rsi_val <= 55):
+        return result
+
+    # Volume above average (momentum confirmation)
+    vol_avg = np.mean(volume[-20:])
+    vol_recent = np.mean(volume[-3:])
+    vol_ratio = vol_recent / vol_avg if vol_avg > 0 else 1.0
+
+    # Grade scoring
+    score = 0
+    max_score = 6
+
+    # EMA stack quality
+    score += 1.5  # Stack aligned
+
+    # ADX strength
+    if adx_val >= 35:
+        score += 2
+    elif adx_val >= 28:
+        score += 1.5
+    else:
+        score += 1
+
+    # RSI in trend zone (not overbought/oversold)
+    score += 0.5
+
+    # Volume confirmation
+    if vol_ratio > 1.3:
+        score += 1.5
+    elif vol_ratio > 1.1:
+        score += 0.75
+
+    if score < 3.0:
+        return result
+
+    if direction == "LONG":
+        stop = ema21[-1] * 0.98
+        target = price * 1.12
+    else:
+        stop = ema21[-1] * 1.02
+        target = price * 0.88
+
+    rr = abs(target - price) / abs(price - stop) if abs(price - stop) > 0 else 0
+
+    result.update({
+        "detected": True,
+        "grade": _grade_score(score, max_score),
+        "details": {
+            "adx": round(adx_val, 1),
+            "ema8": round(float(ema8[-1]), 2),
+            "ema21": round(float(ema21[-1]), 2),
+            "ema50": round(float(ema50[-1]), 2),
+            "rsi": round(rsi_val, 1),
+            "vol_ratio": round(vol_ratio, 2),
+            "stack_aligned": bool(stack_aligned),
+        },
+        "entry_zone": [round(price * 0.99, 2), round(price * 1.005, 2)],
+        "stop_loss": round(stop, 2),
+        "target": round(target, 2),
+        "risk_reward": round(rr, 1),
+    })
+    return result
+
+
+def detect_earnings_gap(df):
+    """
+    Earnings Gap-Up Setup.
+    Large gap (>4%) on above-average volume — buyable if holding above gap open.
+    """
+    result = {"pattern": "Earnings Gap", "detected": False, "direction": "LONG"}
+
+    if len(df) < 10:
+        return result
+
+    close  = df["Close"].values
+    open_  = df["Open"].values
+    volume = df["Volume"].values
+    price  = close[-1]
+
+    # Look for a large gap in the last 5 bars
+    vol_avg_20 = np.mean(volume[-20:])
+    best_gap = None
+
+    for i in range(-5, 0):
+        gap_pct = (open_[i] - close[i - 1]) / close[i - 1] * 100
+        if gap_pct >= 4.0 and volume[i] > vol_avg_20 * 1.5:
+            if best_gap is None or abs(gap_pct) > abs(best_gap["gap_pct"]):
+                best_gap = {
+                    "bar_idx": i,
+                    "gap_pct": gap_pct,
+                    "gap_open": float(open_[i]),
+                    "prev_close": float(close[i - 1]),
+                    "vol_surge": float(volume[i] / vol_avg_20),
+                }
+
+    if best_gap is None:
+        return result
+
+    # Price must still be holding above the gap open (not failed)
+    if price < best_gap["gap_open"] * 0.98:
+        return result
+
+    # Grade scoring
+    score = 0
+    max_score = 6
+
+    if best_gap["gap_pct"] >= 10:
+        score += 2
+    elif best_gap["gap_pct"] >= 7:
+        score += 1.5
+    else:
+        score += 1
+
+    if best_gap["vol_surge"] >= 3.0:
+        score += 2
+    elif best_gap["vol_surge"] >= 2.0:
+        score += 1.5
+    else:
+        score += 1
+
+    # Price holding well above gap open
+    hold_pct = (price - best_gap["gap_open"]) / best_gap["gap_open"] * 100
+    if hold_pct >= 2:
+        score += 1
+    elif hold_pct >= 0:
+        score += 0.5
+
+    if score < 3.0:
+        return result
+
+    stop = best_gap["gap_open"] * 0.97
+    target = price * 1.12
+    rr = (target - price) / (price - stop) if price > stop else 0
+
+    result.update({
+        "detected": True,
+        "grade": _grade_score(score, max_score),
+        "details": {
+            "gap_pct": round(best_gap["gap_pct"], 1),
+            "gap_open": round(best_gap["gap_open"], 2),
+            "prev_close": round(best_gap["prev_close"], 2),
+            "vol_surge": round(best_gap["vol_surge"], 2),
+            "price_vs_gap_open_pct": round(hold_pct, 1),
+        },
+        "entry_zone": [round(best_gap["gap_open"], 2), round(price * 1.01, 2)],
+        "stop_loss": round(stop, 2),
+        "target": round(target, 2),
+        "risk_reward": round(rr, 1),
+    })
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Pattern Registry & Scanner
 # ---------------------------------------------------------------------------
 
 PATTERN_REGISTRY = {
-    "VCP": detect_vcp,
-    "Bull Flag": detect_bull_flag,
-    "New Uptrend": detect_new_uptrend,
-    "Golden Pocket": detect_golden_pocket,
+    # Phase 1 — Core Long Setups
+    "VCP":               detect_vcp,
+    "Bull Flag":         detect_bull_flag,
+    "New Uptrend":       detect_new_uptrend,
+    "Golden Pocket":     detect_golden_pocket,
     "Livermore Breakout": detect_livermore_breakout,
+    # Phase 2 — Expanded Coverage
+    "Stage 1 Base":      detect_stage1_base,
+    "Parabolic Short":   detect_parabolic_short,
+    "Close to Bottom":   detect_close_to_bottom,
+    "BX Momentum":       detect_bx_momentum,
+    "Earnings Gap":      detect_earnings_gap,
 }
 
 
