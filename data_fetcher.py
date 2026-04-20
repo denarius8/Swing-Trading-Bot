@@ -10,10 +10,14 @@ from datetime import datetime, timedelta
 import config
 
 
-def _clear_xattrs(path):
-    """Remove macOS extended attributes that can block writes."""
+def _safe_remove(path):
+    """Delete a file before rewriting it.
+    macOS com.apple.provenance xattr cannot be stripped — the only reliable
+    fix is to remove the old file so the new write creates a clean one.
+    """
     try:
-        subprocess.run(["xattr", "-c", path], capture_output=True, timeout=5)
+        if os.path.exists(path):
+            os.remove(path)
     except Exception:
         pass
 
@@ -89,9 +93,9 @@ def fetch_spx_data(force_refresh=False):
     df = df[["Open", "High", "Low", "Close", "Volume"]]
     df.index.name = "Date"
 
-    # Save cache (clear macOS xattrs first to avoid permission errors)
-    _clear_xattrs(cache)
-    _clear_xattrs(_cache_meta_path())
+    # Delete old files first — macOS com.apple.provenance blocks in-place overwrites
+    _safe_remove(cache)
+    _safe_remove(_cache_meta_path())
     df.to_csv(cache)
     with open(_cache_meta_path(), "w") as f:
         json.dump({"fetched_at": datetime.now().isoformat(), "rows": len(df)}, f)

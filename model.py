@@ -1,6 +1,7 @@
 """ML model training and prediction for SPX opening window direction."""
 
 import os
+import subprocess
 import warnings
 import numpy as np
 import pandas as pd
@@ -14,6 +15,18 @@ from data_fetcher import fetch_spx_data
 from indicators import add_all_features, get_feature_columns
 
 warnings.filterwarnings("ignore")
+
+
+def _safe_remove(path):
+    """Delete a file so joblib can create a fresh one without inherited xattrs.
+    macOS com.apple.provenance cannot be stripped with xattr -c — the only reliable
+    fix is to remove the old file and let the writer create a new one.
+    """
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
 
 
 def prepare_data(df):
@@ -135,8 +148,10 @@ def train_model(force_refresh_data=False):
     for i, idx in enumerate(top_idx):
         print(f"  {i + 1:2d}. {feature_cols[idx]:<25s} {importances[idx]:.4f}")
 
-    # Save model artifacts
+    # Save model artifacts (delete old files so macOS doesn't block with com.apple.provenance)
     os.makedirs("model", exist_ok=True)
+    for path in [config.MODEL_PATH, config.SCALER_PATH, config.FEATURE_PATH]:
+        _safe_remove(path)
     joblib.dump(model, config.MODEL_PATH)
     joblib.dump(scaler, config.SCALER_PATH)
     joblib.dump(feature_cols, config.FEATURE_PATH)
@@ -218,6 +233,8 @@ def train_trend_model(force_refresh_data=False):
     print(f"[TREND] Test Accuracy: {accuracy:.1%}")
 
     os.makedirs("model", exist_ok=True)
+    for path in [config.TREND_MODEL_PATH, config.TREND_SCALER_PATH, config.TREND_FEATURE_PATH]:
+        _safe_remove(path)
     joblib.dump(model, config.TREND_MODEL_PATH)
     joblib.dump(scaler, config.TREND_SCALER_PATH)
     joblib.dump(feature_cols, config.TREND_FEATURE_PATH)
