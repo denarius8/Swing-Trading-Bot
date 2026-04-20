@@ -1158,14 +1158,14 @@
 
 <div class="container">
     <div class="tabs">
-        <button class="tab active" onclick="switchTab('confluence')">Confluence</button>
-        <button class="tab" onclick="switchTab('options')">SPX Options</button>
-        <button class="tab" onclick="switchTab('portfolio')">Portfolio</button>
-        <button class="tab" onclick="switchTab('scanner')">Scanner</button>
+        <button class="tab active" onclick="loadConfluence()">Confluence</button>
+        <button class="tab" onclick="loadOptions()">SPX Options</button>
+        <button class="tab" onclick="loadPortfolio()">Portfolio</button>
+        <button class="tab" onclick="loadScan()">Scanner</button>
         <button class="tab" onclick="switchTab('patterns')">Patterns</button>
-        <button class="tab" onclick="switchTab('signal')">ML Signal</button>
-        <button class="tab" onclick="switchTab('gex')">GEX</button>
-        <button class="tab" onclick="switchTab('backtest')">Backtest</button>
+        <button class="tab" onclick="loadPrediction()">ML Signal</button>
+        <button class="tab" onclick="loadGex()">GEX</button>
+        <button class="tab" onclick="loadBacktest()">Backtest</button>
     </div>
 
     <div id="confluence-tab" class="tab-content active">
