@@ -10,11 +10,11 @@ A real-time S&P 500 trading research dashboard combining dual machine learning s
 
 | Tab | Description |
 |-----|-------------|
-| **Confluence** | 10-indicator consensus signal (RSI, VWAP, EMA Stack, MACD, Bollinger Bands, Volume, Key Levels, ADX, Stochastic, 200 SMA). Fires ENTER LONG/SHORT when 7+ indicators align. Includes 5 leading confidence indicators and net premium tracking. |
+| **Confluence** | Dual-panel system: **Trend System** (10-indicator consensus, fires ENTER LONG/SHORT at 7+) and **Reversal Entry** (6 contrarian indicators that catch bottoms/tops the trend system misses — RSI extreme, Stoch extreme, Bollinger extreme, net premium, VIX regime, volume reversal candle). Both signals shown side-by-side. Includes 5 leading confidence indicators and net premium tracking. |
 | **SPX Options** | Full options chain analysis — Greeks (delta, gamma, theta, vega), IV surface, 0DTE-30DTE premium decay, implied move, key strike levels. Includes Scaled Entry Checklist and Trade Card Enforcer. |
 | **Portfolio** | Track open positions with real-time P&L, exit signals, stop/target alerts, position sizing calculator, and trade history. |
 | **Scanner** | Batch confluence scan across 38-570 tickers. Filter by signal type (ENTER LONG, ENTER SHORT, HOLD). |
-| **Patterns** | AskLivermore-style chart pattern detection — VCP, Bull Flag, New Uptrend, Golden Pocket, Livermore Breakout — with A+ to B quality grading. |
+| **Patterns** | AskLivermore-style chart pattern detection across 15 patterns (5 per phase) with A+ to B quality grading, entry zone, stop, target, and R:R. Scans 38-570 tickers. Filter by pattern type or scan a custom list. |
 | **ML Signal** | **Dual ML system**: tomorrow's candle direction (55%+ accuracy) + 5-day swing trend (hybrid ML + 8-factor rules score). Both signals shown side-by-side with alignment indicator. |
 | **GEX** | Dealer gamma exposure by strike with full-price labels, gridlines, and hover tooltips. Shows GEX flip level, key gamma concentrations, and dealer positioning. |
 | **Backtest** | Last 30 days of ML predictions vs. actual outcomes with cumulative accuracy tracking. |
@@ -105,17 +105,34 @@ Example: SPX at all-time highs with RSI 69, Stoch 99.5:
 
 ### Pattern Scanner
 
-Detects chart patterns with quality grades (A+ to B):
+Detects 15 chart patterns with quality grades (A+ to B). Each detection includes entry zone, stop loss, target price, and risk/reward ratio. Scans the default 38-ticker watchlist in ~0.6s; full S&P 500 + popular universe (~570 tickers) in 2-3 minutes.
 
+#### Phase 1 — Core Long Setups
 | Pattern | Description |
 |---------|-------------|
-| **VCP** | Volatility Contraction Pattern — successive tighter ranges with declining volume |
-| **Bull Flag** | Strong pole (8%+) followed by tight consolidation channel |
-| **New Uptrend** | Price > rising 50 SMA > rising 200 SMA with volume confirmation |
-| **Golden Pocket** | Price at 61.8%-65% Fibonacci retracement of recent swing |
+| **VCP** | Volatility Contraction Pattern — successive tighter ranges with declining volume (Minervini) |
+| **Bull Flag** | Strong pole (8%+) followed by tight consolidation channel, volume dry-up |
+| **New Uptrend** | Price > rising 50 SMA > rising 200 SMA, golden cross or price reclaim |
+| **Golden Pocket** | Price at 61.8%–65% Fibonacci retracement of recent swing with bounce confirmation |
 | **Livermore Breakout** | Breakout from tight consolidation to new highs on volume surge |
 
-Each detection includes entry zone, stop loss, target price, and risk/reward ratio.
+#### Phase 2 — Expanded Coverage
+| Pattern | Direction | Description |
+|---------|-----------|-------------|
+| **Stage 1 Base** | LONG | Weinstein: 150d MA flattening, price consolidating above, quiet volume |
+| **Close to Bottom** | LONG | Within 15% of 52-week low, RSI oversold, volume pickup (accumulation) |
+| **Earnings Gap** | LONG | Gap >4% on 1.5x+ volume, price still holding above gap open |
+| **BX Momentum** | LONG/SHORT | EMA 8/21/50 stack aligned, ADX >20, RSI in trend zone |
+| **Parabolic Short** | SHORT | >2σ above 50 SMA, RSI >70, volume spike / exhaustion candle (blow-off top) |
+
+#### Phase 3 — Complex Geometric
+| Pattern | Direction | Description |
+|---------|-----------|-------------|
+| **Cup & Handle** | LONG | U-shaped base (15–50% depth) + tight handle consolidation, volume dry-up |
+| **Inverse H&S** | LONG | Three troughs (middle lowest), neckline break — bullish reversal |
+| **Head & Shoulders** | SHORT | Three peaks (middle highest), neckline break — distribution top |
+| **Munger 200W** | LONG | Within 8% of 200-week MA (~1000d) from above — long-term value entry |
+| **Stage 3 Top** | SHORT | Weinstein: 150d MA rolling over + price below MA, volume expanding |
 
 ### Net Premium Tracker
 
@@ -126,9 +143,24 @@ Tracks net dollar flow into SPX options as a leading indicator:
 - **Signal**: 4+ consecutive positive days = bullish (+1), 4+ negative = bearish (-1)
 - **Display**: 20-day rolling table with streak counter matching Unusual Whales format
 
+### Reversal Entry System
+
+A parallel 6-indicator panel in the Confluence tab that fires independently of the 10-indicator trend system. Designed to catch capitulation bottoms and blow-off tops that trend-following indicators structurally miss (all 6/10 trend indicators point SHORT at market bottoms by design).
+
+| Indicator | LONG signal | SHORT signal |
+|-----------|-------------|--------------|
+| **RSI Extreme** | RSI < 35 | RSI > 65 |
+| **Stochastic Extreme** | K < 25 | K > 75 |
+| **Bollinger Extreme** | BB% < 15% | BB% > 85% |
+| **Net Premium** | Positive flow | Negative flow |
+| **VIX Regime** | VIX > 28 (panic/elevated) | VIX < 14 (complacency) |
+| **Volume Reversal Candle** | Volume > 1.1x avg, up day, close in upper 40% of range | — |
+
+**Thresholds**: 4+/6 = ENTER, 3/6 = WATCH, <3 = NO SIGNAL. Regime badge (NORMAL / ELEVATED / EXTREME) adjusts signal context based on VIX level and distance from 200 SMA.
+
 ### Scaled Entry Checklist
 
-A 5-point scoring system that auto-populates from live market data and determines position size tier before entry:
+A 5-point scoring system that auto-populates from live market data and determines position size tier before entry. Enter your own account balance — it's saved in your browser and never stored in the codebase.
 
 | Score | Tier | Action |
 |-------|------|--------|
@@ -253,7 +285,9 @@ All market data comes from **Yahoo Finance** via the `yfinance` library (free, n
 - **News Sentiment**: Uses live yfinance headline format. Keywords scored across 60+ bullish/bearish terms. High-impact events (Fed, CPI, earnings) automatically flag confidence as LOW regardless of signal direction.
 - **Net Premium AUTO values**: Approximation only — cannot distinguish bought vs. sold options from public data. Use Unusual Whales manual override for accuracy.
 - **5-Day Trend accuracy**: Test set accuracy varies with market regime. The hybrid approach (ML + rules) is more stable across different market conditions than pure ML alone.
-- **macOS file permissions**: `data_fetcher.py` automatically clears `com.apple.provenance` extended attributes before writing cache files to prevent permission errors.
+- **macOS file permissions**: `data_fetcher.py` and `model.py` delete existing cache/model files before rewriting them. macOS `com.apple.provenance` cannot be stripped with `xattr -c` — deleting and recreating avoids in-place overwrite failures on the Refresh & Retrain path.
+- **Key Levels (ML Signal tab)**: High/Low values are fetched fresh on every `/api/predict` call from a 30-day yfinance download. They do not depend on the training data cache.
+- **Account balance**: Never stored in source code. Enter your own balance in the Scaled Entry Checklist form — it saves to `localStorage` and flows through to the API on each checklist run.
 
 ## Disclaimer
 
