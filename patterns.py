@@ -1159,22 +1159,563 @@ def detect_earnings_gap(df):
 
 
 # ---------------------------------------------------------------------------
+# Pattern Detectors - Phase 3
+# ---------------------------------------------------------------------------
+
+def detect_cup_handle(df):
+    """
+    Cup & Handle (William O'Neil).
+    U-shaped base (15-60% depth) followed by a tight handle consolidation (<10%).
+    """
+    result = {"pattern": "Cup & Handle", "detected": False, "direction": "LONG"}
+
+    if len(df) < 60:
+        return result
+
+    close  = df["Close"].values
+    high   = df["High"].values
+    low    = df["Low"].values
+    volume = df["Volume"].values
+    price  = close[-1]
+
+    # Search for a cup: look back 30-120 bars
+    best_cup = None
+    for lookback in [120, 90, 60]:
+        if len(close) < lookback + 10:
+            continue
+
+        window_high = max(high[-lookback:-5])
+        window_high_idx = len(high) - lookback + np.argmax(high[-lookback:-5])
+
+        # Find the cup low (deepest point between cup start and recent bars)
+        mid_start = window_high_idx
+        mid_end   = len(close) - 10
+        if mid_end <= mid_start:
+            continue
+
+        cup_low = min(low[mid_start:mid_end])
+        cup_depth_pct = (window_high - cup_low) / window_high * 100
+
+        # Cup must be 15-50% deep
+        if not (15 <= cup_depth_pct <= 50):
+            continue
+
+        # Right side: price must have recovered to near the cup high (within 10%)
+        right_high = max(high[-10:])
+        recovery_pct = (right_high - cup_low) / (window_high - cup_low) * 100
+        if recovery_pct < 70:
+            continue
+
+        best_cup = {
+            "lookback": lookback,
+            "cup_high": window_high,
+            "cup_low": cup_low,
+            "cup_depth_pct": cup_depth_pct,
+            "recovery_pct": recovery_pct,
+        }
+        break
+
+    if best_cup is None:
+        return result
+
+    # Handle: recent consolidation (last 5-15 bars) tighter than the cup
+    handle_bars = min(15, len(close) - 5)
+    handle_high = max(high[-handle_bars:])
+    handle_low  = min(low[-handle_bars:])
+    handle_range_pct = (handle_high - handle_low) / handle_high * 100
+
+    # Handle must retrace < 50% of cup and be tight
+    cup_range = best_cup["cup_high"] - best_cup["cup_low"]
+    handle_retrace = (handle_high - handle_low) / cup_range * 100 if cup_range > 0 else 99
+    if handle_range_pct > 10 or handle_retrace > 50:
+        return result
+
+    # Volume should decline in handle
+    vol_cup   = np.mean(volume[-best_cup["lookback"]:-handle_bars])
+    vol_handle = np.mean(volume[-handle_bars:])
+    vol_ratio  = vol_handle / vol_cup if vol_cup > 0 else 1.0
+
+    # Grade scoring
+    score = 0
+    max_score = 6
+
+    # Cup shape quality
+    if best_cup["cup_depth_pct"] <= 33:
+        score += 1.5  # Ideal depth
+    else:
+        score += 1.0
+
+    if best_cup["recovery_pct"] >= 90:
+        score += 1.5
+    elif best_cup["recovery_pct"] >= 80:
+        score += 1.0
+
+    # Handle tightness
+    if handle_range_pct < 4:
+        score += 1.5
+    elif handle_range_pct < 7:
+        score += 1.0
+
+    # Volume dry-up in handle
+    if vol_ratio < 0.6:
+        score += 1.0
+    elif vol_ratio < 0.8:
+        score += 0.5
+
+    if score < 3.0:
+        return result
+
+    stop    = handle_low * 0.98
+    target  = best_cup["cup_high"] + (best_cup["cup_high"] - best_cup["cup_low"])
+    rr      = (target - price) / (price - stop) if price > stop else 0
+
+    result.update({
+        "detected": True,
+        "grade": _grade_score(score, max_score),
+        "details": {
+            "cup_high": round(best_cup["cup_high"], 2),
+            "cup_low": round(best_cup["cup_low"], 2),
+            "cup_depth_pct": round(best_cup["cup_depth_pct"], 1),
+            "recovery_pct": round(best_cup["recovery_pct"], 1),
+            "handle_range_pct": round(handle_range_pct, 1),
+            "vol_ratio": round(vol_ratio, 2),
+        },
+        "entry_zone": [round(handle_high * 0.99, 2), round(handle_high * 1.01, 2)],
+        "stop_loss": round(stop, 2),
+        "target": round(target, 2),
+        "risk_reward": round(rr, 1),
+    })
+    return result
+
+
+def detect_inverse_head_shoulders(df):
+    """
+    Inverse Head & Shoulders (bullish reversal).
+    Three troughs — middle lowest — with neckline break.
+    """
+    result = {"pattern": "Inverse H&S", "detected": False, "direction": "LONG"}
+
+    if len(df) < 60:
+        return result
+
+    close = df["Close"].values
+    low   = df["Low"].values
+    high  = df["High"].values
+    price = close[-1]
+
+    swing_highs, swing_lows = _find_swing_points(close[-120:] if len(close) >= 120 else close, order=5)
+
+    if len(swing_lows) < 3:
+        return result
+
+    # Take the 3 most recent swing lows
+    recent_lows = swing_lows[-3:]
+    ls_idx, ls = recent_lows[0]
+    h_idx,  hd = recent_lows[1]
+    rs_idx, rs = recent_lows[2]
+
+    # Head must be the lowest
+    if not (hd < ls and hd < rs):
+        return result
+
+    # Shoulders should be at similar levels (within 5% of each other)
+    shoulder_diff = abs(ls - rs) / max(ls, rs) * 100
+    if shoulder_diff > 8:
+        return result
+
+    # Neckline: line connecting the peaks between left shoulder and head, and head and right shoulder
+    peaks_between = [p for p in swing_highs if ls_idx < p[0] < rs_idx]
+    if len(peaks_between) < 1:
+        return result
+
+    neckline = np.mean([p[1] for p in peaks_between])
+
+    # Price must be near or breaking above neckline
+    if price < neckline * 0.97:
+        return result
+
+    # Volume: should increase on right shoulder vs head formation
+    offset = len(close) - 120 if len(close) >= 120 else 0
+    rs_vol_idx = min(rs_idx + offset, len(df) - 1)
+    vol_rs = np.mean(df["Volume"].values[max(0, rs_vol_idx - 5):rs_vol_idx + 1])
+    vol_avg = np.mean(df["Volume"].values[-20:])
+    vol_ratio = vol_rs / vol_avg if vol_avg > 0 else 1.0
+
+    # Grade scoring
+    score = 0
+    max_score = 6
+
+    # Symmetry of shoulders
+    if shoulder_diff < 3:
+        score += 2
+    elif shoulder_diff < 5:
+        score += 1.5
+    else:
+        score += 1
+
+    # Head depth relative to shoulders
+    head_depth = (min(ls, rs) - hd) / min(ls, rs) * 100
+    if head_depth > 5:
+        score += 1.5
+    else:
+        score += 0.5
+
+    # Neckline break
+    if price >= neckline:
+        score += 1.5
+    elif price >= neckline * 0.98:
+        score += 0.5
+
+    # Volume
+    if vol_ratio > 1.2:
+        score += 1
+
+    if score < 3.0:
+        return result
+
+    pattern_height = neckline - hd
+    stop    = hd * 0.97
+    target  = neckline + pattern_height
+    rr      = (target - price) / (price - stop) if price > stop else 0
+
+    result.update({
+        "detected": True,
+        "grade": _grade_score(score, max_score),
+        "details": {
+            "left_shoulder": round(ls, 2),
+            "head": round(hd, 2),
+            "right_shoulder": round(rs, 2),
+            "neckline": round(neckline, 2),
+            "shoulder_diff_pct": round(shoulder_diff, 1),
+            "vol_ratio": round(vol_ratio, 2),
+        },
+        "entry_zone": [round(neckline, 2), round(neckline * 1.02, 2)],
+        "stop_loss": round(stop, 2),
+        "target": round(target, 2),
+        "risk_reward": round(rr, 1),
+    })
+    return result
+
+
+def detect_head_shoulders(df):
+    """
+    Head & Shoulders Top (bearish reversal).
+    Three peaks — middle highest — with neckline break.
+    """
+    result = {"pattern": "Head & Shoulders", "detected": False, "direction": "SHORT"}
+
+    if len(df) < 60:
+        return result
+
+    close = df["Close"].values
+    high  = df["High"].values
+    price = close[-1]
+
+    swing_highs, swing_lows = _find_swing_points(close[-120:] if len(close) >= 120 else close, order=5)
+
+    if len(swing_highs) < 3:
+        return result
+
+    # Take the 3 most recent swing highs
+    recent_highs = swing_highs[-3:]
+    ls_idx, ls = recent_highs[0]
+    h_idx,  hd = recent_highs[1]
+    rs_idx, rs = recent_highs[2]
+
+    # Head must be the highest
+    if not (hd > ls and hd > rs):
+        return result
+
+    # Shoulders should be similar (within 8%)
+    shoulder_diff = abs(ls - rs) / max(ls, rs) * 100
+    if shoulder_diff > 8:
+        return result
+
+    # Neckline: troughs between peaks
+    troughs_between = [t for t in swing_lows if ls_idx < t[0] < rs_idx]
+    if len(troughs_between) < 1:
+        return result
+
+    neckline = np.mean([t[1] for t in troughs_between])
+
+    # Price must be near or breaking below neckline
+    if price > neckline * 1.03:
+        return result
+
+    # Volume: should increase on right shoulder decline vs head
+    vol_avg = np.mean(df["Volume"].values[-20:])
+    vol_recent = np.mean(df["Volume"].values[-5:])
+    vol_ratio = vol_recent / vol_avg if vol_avg > 0 else 1.0
+
+    # Grade scoring
+    score = 0
+    max_score = 6
+
+    if shoulder_diff < 3:
+        score += 2
+    elif shoulder_diff < 5:
+        score += 1.5
+    else:
+        score += 1
+
+    head_height = (hd - max(ls, rs)) / max(ls, rs) * 100
+    if head_height > 5:
+        score += 1.5
+    else:
+        score += 0.5
+
+    if price <= neckline:
+        score += 1.5
+    elif price <= neckline * 1.02:
+        score += 0.5
+
+    if vol_ratio > 1.2:
+        score += 1
+
+    if score < 3.0:
+        return result
+
+    pattern_height = hd - neckline
+    stop   = hd * 1.02
+    target = neckline - pattern_height
+    rr     = (price - target) / (stop - price) if stop > price else 0
+
+    result.update({
+        "detected": True,
+        "grade": _grade_score(score, max_score),
+        "details": {
+            "left_shoulder": round(ls, 2),
+            "head": round(hd, 2),
+            "right_shoulder": round(rs, 2),
+            "neckline": round(neckline, 2),
+            "shoulder_diff_pct": round(shoulder_diff, 1),
+            "vol_ratio": round(vol_ratio, 2),
+        },
+        "entry_zone": [round(neckline * 0.99, 2), round(neckline, 2)],
+        "stop_loss": round(stop, 2),
+        "target": round(target, 2),
+        "risk_reward": round(rr, 1),
+    })
+    return result
+
+
+def detect_munger_200w(df):
+    """
+    Munger 200-Week MA Support.
+    Price within 5% of 200-week MA from above — long-term value entry.
+    Uses daily data: 1000-day MA as proxy for 200-week.
+    """
+    result = {"pattern": "Munger 200W", "detected": False, "direction": "LONG"}
+
+    # Need at least 4 years of daily data for a meaningful 200-week MA
+    if len(df) < 600:
+        return result
+
+    close  = df["Close"].values
+    volume = df["Volume"].values
+    price  = close[-1]
+
+    ma1000 = pd.Series(close).rolling(1000).mean().values
+    ma200  = pd.Series(close).rolling(200).mean().values
+
+    # Use whichever long MA we have
+    if not np.isnan(ma1000[-1]):
+        long_ma = ma1000[-1]
+        ma_label = "1000d (~200w)"
+    elif not np.isnan(ma200[-1]):
+        long_ma = ma200[-1]
+        ma_label = "200d"
+    else:
+        return result
+
+    dist_pct = (price - long_ma) / long_ma * 100
+
+    # Must be within 8% of the long MA from above (not below = already broken)
+    if not (-2 <= dist_pct <= 8):
+        return result
+
+    # RSI: oversold or neutral (not overbought at this level)
+    rsi = ta.momentum.rsi(pd.Series(close), window=14).values
+    rsi_val = float(rsi[-1]) if not np.isnan(rsi[-1]) else 50
+    if rsi_val > 60:
+        return result
+
+    # Volume: above average (institutional accumulation at long-term value)
+    vol_avg    = np.mean(volume[-20:])
+    vol_recent = np.mean(volume[-5:])
+    vol_ratio  = vol_recent / vol_avg if vol_avg > 0 else 1.0
+
+    # Grade scoring
+    score = 0
+    max_score = 6
+
+    # Proximity to 200w MA
+    if abs(dist_pct) < 2:
+        score += 2.5
+    elif abs(dist_pct) < 5:
+        score += 1.5
+    else:
+        score += 0.5
+
+    # RSI near/at oversold
+    if rsi_val < 35:
+        score += 1.5
+    elif rsi_val < 45:
+        score += 1.0
+    else:
+        score += 0.5
+
+    # Volume confirmation
+    if vol_ratio > 1.5:
+        score += 1.5
+    elif vol_ratio > 1.2:
+        score += 1.0
+
+    if score < 3.0:
+        return result
+
+    stop   = long_ma * 0.95
+    target = price * 1.20   # 20% recovery toward prior trend
+    rr     = (target - price) / (price - stop) if price > stop else 0
+
+    result.update({
+        "detected": True,
+        "grade": _grade_score(score, max_score),
+        "details": {
+            "long_ma": round(long_ma, 2),
+            "ma_label": ma_label,
+            "dist_from_ma_pct": round(dist_pct, 2),
+            "rsi": round(rsi_val, 1),
+            "vol_ratio": round(vol_ratio, 2),
+        },
+        "entry_zone": [round(price * 0.99, 2), round(long_ma * 1.05, 2)],
+        "stop_loss": round(stop, 2),
+        "target": round(target, 2),
+        "risk_reward": round(rr, 1),
+    })
+    return result
+
+
+def detect_stage3_top(df):
+    """
+    Weinstein Stage 3 Top / Stage 4 Decline.
+    150d MA rolling over, price breaking below — distribution top.
+    """
+    result = {"pattern": "Stage 3 Top", "detected": False, "direction": "SHORT"}
+
+    if len(df) < 150:
+        return result
+
+    close  = df["Close"].values
+    volume = df["Volume"].values
+    price  = close[-1]
+
+    ma150      = pd.Series(close).rolling(150).mean().values
+    ma150_now  = ma150[-1]
+    ma150_prev = ma150[-20]
+
+    if np.isnan(ma150_now) or np.isnan(ma150_prev):
+        return result
+
+    # MA150 must be declining (down >1% in 20 days)
+    ma_slope_pct = (ma150_now - ma150_prev) / ma150_prev * 100
+    if ma_slope_pct > -0.5:
+        return result
+
+    # Price must be below the 150 MA
+    if price >= ma150_now:
+        return result
+
+    # Price within 20% below MA (not already in free-fall)
+    dist_below = (ma150_now - price) / ma150_now * 100
+    if dist_below > 25:
+        return result
+
+    # Volume expanding on down moves (distribution)
+    vol_recent  = np.mean(volume[-10:])
+    vol_earlier = np.mean(volume[-30:-10])
+    vol_ratio   = vol_recent / vol_earlier if vol_earlier > 0 else 1.0
+
+    # 52-week high — how far off the top
+    high_52w = max(df["High"].values[-252:]) if len(df) >= 252 else max(df["High"].values)
+    pct_from_high = (high_52w - price) / high_52w * 100
+
+    # Grade scoring
+    score = 0
+    max_score = 6
+
+    # MA slope (steeper = stronger signal)
+    if ma_slope_pct < -2:
+        score += 2
+    elif ma_slope_pct < -1:
+        score += 1.5
+    else:
+        score += 1
+
+    # Distance below MA
+    if dist_below > 5:
+        score += 1.5
+    elif dist_below > 2:
+        score += 1
+
+    # Volume expansion (distribution)
+    if vol_ratio > 1.3:
+        score += 1.5
+    elif vol_ratio > 1.1:
+        score += 0.75
+
+    # Off the highs
+    if pct_from_high > 20:
+        score += 1
+
+    if score < 3.0:
+        return result
+
+    stop   = ma150_now * 1.02       # Stop above the declining MA
+    target = price * 0.85           # 15% further downside
+    rr     = (price - target) / (stop - price) if stop > price else 0
+
+    result.update({
+        "detected": True,
+        "grade": _grade_score(score, max_score),
+        "details": {
+            "ma150": round(ma150_now, 2),
+            "ma_slope_pct_20d": round(ma_slope_pct, 2),
+            "dist_below_ma_pct": round(dist_below, 1),
+            "vol_ratio": round(vol_ratio, 2),
+            "pct_from_52w_high": round(pct_from_high, 1),
+        },
+        "entry_zone": [round(price * 0.99, 2), round(price, 2)],
+        "stop_loss": round(stop, 2),
+        "target": round(target, 2),
+        "risk_reward": round(rr, 1),
+    })
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Pattern Registry & Scanner
 # ---------------------------------------------------------------------------
 
 PATTERN_REGISTRY = {
     # Phase 1 — Core Long Setups
-    "VCP":               detect_vcp,
-    "Bull Flag":         detect_bull_flag,
-    "New Uptrend":       detect_new_uptrend,
-    "Golden Pocket":     detect_golden_pocket,
+    "VCP":                detect_vcp,
+    "Bull Flag":          detect_bull_flag,
+    "New Uptrend":        detect_new_uptrend,
+    "Golden Pocket":      detect_golden_pocket,
     "Livermore Breakout": detect_livermore_breakout,
     # Phase 2 — Expanded Coverage
-    "Stage 1 Base":      detect_stage1_base,
-    "Parabolic Short":   detect_parabolic_short,
-    "Close to Bottom":   detect_close_to_bottom,
-    "BX Momentum":       detect_bx_momentum,
-    "Earnings Gap":      detect_earnings_gap,
+    "Stage 1 Base":       detect_stage1_base,
+    "Parabolic Short":    detect_parabolic_short,
+    "Close to Bottom":    detect_close_to_bottom,
+    "BX Momentum":        detect_bx_momentum,
+    "Earnings Gap":       detect_earnings_gap,
+    # Phase 3 — Complex Geometric
+    "Cup & Handle":       detect_cup_handle,
+    "Inverse H&S":        detect_inverse_head_shoulders,
+    "Head & Shoulders":   detect_head_shoulders,
+    "Munger 200W":        detect_munger_200w,
+    "Stage 3 Top":        detect_stage3_top,
 }
 
 
