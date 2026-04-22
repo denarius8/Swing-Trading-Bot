@@ -1702,7 +1702,7 @@ async function loadTicker() {
 
 // Load ticker on page load and refresh every 30 seconds
 loadTicker();
-tickerInterval = setInterval(loadTicker, 30000);
+tickerInterval = setInterval(loadTicker, 10000);
 
 function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
