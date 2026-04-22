@@ -742,30 +742,75 @@ def api_risk_calc():
 
 @app.route("/api/live")
 def api_live():
+    """Fetch current SPX price using 2-minute intraday bars (same as Confluence tab)."""
     try:
-        ticker = yf.Ticker("^SPX")
-        hist = ticker.history(period="5d")
-        if hist.empty:
-            ticker = yf.Ticker("^GSPC")
-            hist = ticker.history(period="5d")
-        if hist.empty:
-            return jsonify({"success": False, "error": "Could not fetch SPX data"})
+        import pandas as pd
+        price = prev_close = day_open = day_high = day_low = None
+        volume = 0
+        source = None
 
-        # Today's (latest) bar
-        today = hist.iloc[-1]
-        price = float(today["Close"])
-        day_open = float(today["Open"])
-        day_high = float(today["High"])
-        day_low = float(today["Low"])
-        volume = int(today["Volume"])
+        # --- Primary: 2-minute intraday bars (most current during market hours) ---
+        for sym, interval in [("^GSPC", "2m"), ("^SPX", "2m"), ("SPY", "1m")]:
+            try:
+                tk = yf.Ticker(sym)
+                intra = tk.history(period="5d", interval=interval, prepost=True)
+                daily = tk.history(period="5d")
+                if intra.empty or daily.empty or len(daily) < 2:
+                    continue
 
-        # Previous close for change calculation
-        prev_close = float(hist.iloc[-2]["Close"])
+                price = float(intra["Close"].iloc[-1])
+                prev_close = float(daily["Close"].iloc[-2])
+                day_open = float(daily["Open"].iloc[-1])
+                volume = int(daily["Volume"].iloc[-1])
+
+                # Intraday high/low filtered to today only
+                last_date = intra.index[-1].date() if hasattr(intra.index[-1], "date") else pd.Timestamp(intra.index[-1]).date()
+                today_bars = intra[intra.index.date == last_date] if hasattr(intra.index, "date") else intra.tail(200)
+                if today_bars.empty:
+                    today_bars = intra.tail(100)
+
+                day_high = float(today_bars["High"].max())
+                day_low = float(today_bars["Low"].min())
+
+                # Scale SPY to SPX equivalent
+                if sym == "SPY":
+                    ref_daily = yf.Ticker("^GSPC").history(period="2d")
+                    spx_ref = float(ref_daily["Close"].iloc[-1]) if not ref_daily.empty else price * 10
+                    scale = spx_ref / price
+                    price *= scale; day_open *= scale
+                    prev_close *= scale; day_high *= scale; day_low *= scale
+
+                source = sym
+                break
+            except Exception:
+                continue
+
+        # --- Fallback: daily bars (works outside market hours) ---
+        if price is None:
+            for sym in ["^GSPC", "^SPX"]:
+                try:
+                    tk = yf.Ticker(sym)
+                    hist = tk.history(period="5d")
+                    if hist.empty or len(hist) < 2:
+                        continue
+                    today = hist.iloc[-1]
+                    price = float(today["Close"])
+                    day_open = float(today["Open"])
+                    day_high = float(today["High"])
+                    day_low = float(today["Low"])
+                    volume = int(today["Volume"])
+                    prev_close = float(hist.iloc[-2]["Close"])
+                    source = sym + "_daily"
+                    break
+                except Exception:
+                    continue
+
+        if price is None:
+            return jsonify({"success": False, "error": "Could not fetch SPX price from any source"})
+
         change = price - prev_close
-        change_pct = change / prev_close
-
-        # Day range position (0% = at low, 100% = at high)
-        day_range_pct = (price - day_low) / (day_high - day_low) if day_high != day_low else 0.5
+        change_pct = change / prev_close * 100 if prev_close > 0 else 0
+        day_range_pct = (price - day_low) / (day_high - day_low) * 100 if day_high != day_low else 50.0
 
         return jsonify({
             "success": True,
@@ -775,9 +820,10 @@ def api_live():
             "low": round(day_low, 2),
             "prev_close": round(prev_close, 2),
             "change": round(change, 2),
-            "change_pct": round(change_pct * 100, 2),
+            "change_pct": round(change_pct, 2),
             "volume": volume,
-            "day_range_pct": round(day_range_pct * 100, 1),
+            "day_range_pct": round(day_range_pct, 1),
+            "source": source,
             "timestamp": datetime.now().strftime("%H:%M:%S"),
         })
     except Exception as e:
