@@ -1630,58 +1630,64 @@
 <script>
 let tickerInterval = null;
 
+// Shared ticker renderer — called by both loadTicker() and loadConfluence()
+function renderTickerBar(price, change, changePct, prevClose, open, high, low, rangePct, volume, ts) {
+    const changeClass = change > 0 ? 'up' : change < 0 ? 'down' : 'flat';
+    const changeSign = change >= 0 ? '+' : '';
+    const vol = volume == null ? '—' :
+                volume >= 1e9 ? (volume / 1e9).toFixed(2) + 'B' :
+                volume >= 1e6 ? (volume / 1e6).toFixed(1) + 'M' :
+                volume >= 1e3 ? (volume / 1e3).toFixed(0) + 'K' : volume;
+    const dotPos = Math.max(0, Math.min(100, rangePct || 50));
+    document.getElementById('ticker-bar').innerHTML = `
+        <div style="display:flex; align-items:center; gap:6px;">
+            <span style="color:#7d8590; font-size:13px; font-weight:600;">SPX</span>
+            <span class="ticker-price">${price.toLocaleString()}</span>
+        </div>
+        <span class="ticker-change ${changeClass}">${changeSign}${change.toFixed(2)} (${changeSign}${changePct}%)</span>
+        <div class="ticker-divider"></div>
+        <div class="ticker-item">
+            <span class="ticker-label">Prev Close</span>
+            <span class="ticker-value">${prevClose.toLocaleString()}</span>
+        </div>
+        <div class="ticker-item">
+            <span class="ticker-label">Open</span>
+            <span class="ticker-value">${open.toLocaleString()}</span>
+        </div>
+        <div class="ticker-divider"></div>
+        <div class="ticker-item">
+            <span class="ticker-label">Day Low</span>
+            <span class="ticker-value" style="color:#f47067;">${low.toLocaleString()}</span>
+        </div>
+        <div class="ticker-item">
+            <span class="ticker-label">Day Range</span>
+            <div class="ticker-range-bar">
+                <div class="ticker-range-fill" style="width:100%;"></div>
+                <div class="ticker-range-dot" style="left:${dotPos}%;"></div>
+            </div>
+        </div>
+        <div class="ticker-item">
+            <span class="ticker-label">Day High</span>
+            <span class="ticker-value" style="color:#3fb950;">${high.toLocaleString()}</span>
+        </div>
+        <div class="ticker-divider"></div>
+        <div class="ticker-item">
+            <span class="ticker-label">Volume</span>
+            <span class="ticker-value">${vol}</span>
+        </div>
+        <div class="ticker-update"><span class="ticker-live-dot"></span>Updated ${ts}</div>
+    `;
+}
+
 async function loadTicker() {
     try {
         const res = await fetch('/api/live');
         const d = await res.json();
         if (!d.success) return;
-
-        const changeClass = d.change > 0 ? 'up' : d.change < 0 ? 'down' : 'flat';
-        const changeSign = d.change >= 0 ? '+' : '';
-        const vol = d.volume >= 1e9 ? (d.volume / 1e9).toFixed(2) + 'B' :
-                    d.volume >= 1e6 ? (d.volume / 1e6).toFixed(1) + 'M' :
-                    d.volume >= 1e3 ? (d.volume / 1e3).toFixed(0) + 'K' : d.volume;
-
-        document.getElementById('ticker-bar').innerHTML = `
-            <div style="display:flex; align-items:center; gap:6px;">
-                <span style="color:#7d8590; font-size:13px; font-weight:600;">SPX</span>
-                <span class="ticker-price">${d.price.toLocaleString()}</span>
-            </div>
-            <span class="ticker-change ${changeClass}">${changeSign}${d.change.toFixed(2)} (${changeSign}${d.change_pct}%)</span>
-            <div class="ticker-divider"></div>
-            <div class="ticker-item">
-                <span class="ticker-label">Prev Close</span>
-                <span class="ticker-value">${d.prev_close.toLocaleString()}</span>
-            </div>
-            <div class="ticker-item">
-                <span class="ticker-label">Open</span>
-                <span class="ticker-value">${d.open.toLocaleString()}</span>
-            </div>
-            <div class="ticker-divider"></div>
-            <div class="ticker-item">
-                <span class="ticker-label">Day Low</span>
-                <span class="ticker-value" style="color:#f47067;">${d.low.toLocaleString()}</span>
-            </div>
-            <div class="ticker-item">
-                <span class="ticker-label">Day Range</span>
-                <div class="ticker-range-bar">
-                    <div class="ticker-range-fill" style="width:100%;"></div>
-                    <div class="ticker-range-dot" style="left:${d.day_range_pct}%;"></div>
-                </div>
-            </div>
-            <div class="ticker-item">
-                <span class="ticker-label">Day High</span>
-                <span class="ticker-value" style="color:#3fb950;">${d.high.toLocaleString()}</span>
-            </div>
-            <div class="ticker-divider"></div>
-            <div class="ticker-item">
-                <span class="ticker-label">Volume</span>
-                <span class="ticker-value">${vol}</span>
-            </div>
-            <div class="ticker-update"><span class="ticker-live-dot"></span>Updated ${d.timestamp}</div>
-        `;
+        renderTickerBar(d.price, d.change, d.change_pct, d.prev_close,
+                        d.open, d.high, d.low, d.day_range_pct, d.volume, d.timestamp);
     } catch (err) {
-        // Silently fail, will retry
+        // Silently fail, will retry on next interval
     }
 }
 
@@ -2819,6 +2825,15 @@ async function loadConfluence() {
         document.getElementById('confluence-loading').style.display = 'none';
         document.getElementById('confluence-content').style.display = 'block';
         setStatus('Confluence: ' + data.signal + ' (' + data.strength + '/10)');
+
+        // Sync ticker bar with the live price already fetched inside /api/confluence
+        // so both displays show the same number at the same instant
+        if (data.live) {
+            const lv = data.live;
+            renderTickerBar(lv.current, lv.change_from_close, lv.change_from_close_pct,
+                            lv.prev_close, lv.open, lv.high, lv.low, lv.day_range_pct,
+                            null, new Date().toLocaleTimeString());
+        }
 
         // Load net premium data asynchronously
         loadNetPremium();
