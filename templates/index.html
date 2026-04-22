@@ -3332,9 +3332,31 @@ async function loadOptions() {
     setStatus('Fetching options data...');
 
     try {
-        const res = await fetch('/api/options');
+        // Fetch options data and live price in parallel
+        const [res, liveRes] = await Promise.all([fetch('/api/options'), fetch('/api/live')]);
         const d = await res.json();
         if (!d.success) throw new Error(d.error);
+
+        // Always overlay with fresh /api/live price (same source Confluence uses)
+        try {
+            const ld = await liveRes.json();
+            if (ld.success) {
+                const chgFromOpen = ld.price - ld.open;
+                d.live = {
+                    current: ld.price,
+                    open: ld.open,
+                    prev_close: ld.prev_close,
+                    high: ld.high,
+                    low: ld.low,
+                    change_from_close: ld.change,
+                    change_from_close_pct: ld.change_pct,
+                    change_from_open: parseFloat(chgFromOpen.toFixed(2)),
+                    change_from_open_pct: ld.open > 0 ? parseFloat((chgFromOpen / ld.open * 100).toFixed(2)) : 0,
+                    day_range_pct: ld.day_range_pct,
+                    source: 'live'
+                };
+            }
+        } catch(e) { /* keep d.live from backend if /api/live fails */ }
 
         const ivColor = d.iv_rank > 70 ? '#ff7b72' : d.iv_rank > 40 ? '#d29922' : '#3fb950';
         const ivBg = d.iv_rank > 70 ? '#4a1111' : d.iv_rank > 40 ? '#2a2000' : '#0d4429';
