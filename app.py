@@ -590,6 +590,7 @@ def api_options_contract():
         target_exit = request.args.get("target", None)
         current_price = request.args.get("current_price", None)
         current_spx = request.args.get("current_spx", None)
+        underlying = request.args.get("underlying", "SPX").upper()
         if target_exit:
             target_exit = float(target_exit)
         if current_price:
@@ -600,9 +601,9 @@ def api_options_contract():
         if strike <= 0 or not expiration or premium <= 0:
             return jsonify({"success": False, "error": "Strike, expiration, and premium are required"})
 
-        result = analyze_contract(strike, expiration, option_type, premium, contracts, target_exit, current_price, current_spx)
+        result = analyze_contract(strike, expiration, option_type, premium, contracts, target_exit, current_price, current_spx, underlying)
         if result is None:
-            return jsonify({"success": False, "error": "Could not fetch SPX data"})
+            return jsonify({"success": False, "error": "Could not fetch options data for " + underlying})
         result["success"] = True
         return jsonify(result)
     except Exception as e:

@@ -454,9 +454,9 @@ def _fetch_live_option_price(strike, expiration, option_type):
         return None
 
 
-def analyze_contract(strike, expiration, option_type, premium, contracts=1, target_exit=None, current_price=None, current_spx=None):
+def analyze_contract(strike, expiration, option_type, premium, contracts=1, target_exit=None, current_price=None, current_spx=None, underlying='SPX'):
     """
-    Analyze probability of profit and key scenarios for a specific SPX contract.
+    Analyze probability of profit and key scenarios for a specific options contract.
     Auto-fetches LIVE market price and IV from the options chain for maximum accuracy.
     Falls back to user-provided current_price, then entry premium.
 
@@ -468,9 +468,11 @@ def analyze_contract(strike, expiration, option_type, premium, contracts=1, targ
         contracts: Number of contracts
         target_exit: Optional target premium to sell at
         current_price: Optional override for current market price
-        current_spx: Optional override for current SPX spot price
+        current_spx: Optional override for current spot price
+        underlying: 'SPX', 'NDX', or 'QQQ'
     """
-    data = _fetch_options_data()
+    index = 'NDX' if underlying in ('NDX', 'QQQ') else 'SPX'
+    data = _fetch_options_data(index=index)
     if data is None:
         return None
 

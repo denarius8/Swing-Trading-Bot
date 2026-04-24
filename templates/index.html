@@ -1146,8 +1146,9 @@
         <div class="subtitle">Predictive Research Tool - Not Financial Advice</div>
     </div>
     <div class="btn-group">
-        <button class="btn primary" onclick="loadConfluence()">Confluence</button>
-        <button class="btn" onclick="loadOptions()">SPX Options</button>
+        <button class="btn primary" onclick="loadConfluence()">SPX</button>
+        <button class="btn" onclick="loadNdxDashboard()">NDX</button>
+        <button class="btn" onclick="loadOptions()">Options</button>
         <button class="btn" onclick="loadPortfolio()">Portfolio</button>
         <button class="btn" onclick="loadScan()">Scan Tickers</button>
         <button class="btn" onclick="loadGex()">GEX</button>
@@ -1161,15 +1162,15 @@
 
 <div class="container">
     <div class="tabs">
-        <button class="tab active" onclick="loadConfluence()">Confluence</button>
-        <button class="tab" onclick="loadOptions()">SPX Options</button>
+        <button class="tab active" onclick="loadConfluence()">SPX</button>
+        <button class="tab" onclick="loadNdxDashboard()" id="ndx-main-tab">NDX</button>
+        <button class="tab" onclick="loadOptions()">Options</button>
         <button class="tab" onclick="loadPortfolio()">Portfolio</button>
         <button class="tab" onclick="loadScan()">Scanner</button>
         <button class="tab" onclick="switchTab('patterns')">Patterns</button>
         <button class="tab" onclick="loadPrediction()">ML Signal</button>
         <button class="tab" onclick="loadGex()">GEX</button>
         <button class="tab" onclick="loadBacktest()">Backtest</button>
-        <button class="tab" onclick="loadNdxDashboard()" id="ndx-main-tab">NDX</button>
     </div>
 
     <div id="confluence-tab" class="tab-content active">
@@ -1275,15 +1276,15 @@
             <div class="trade-card-section">Exit Targets (required — plan before entry)</div>
             <div class="trade-card-grid">
                 <div class="trade-card-field">
-                    <label>T1 — SPX Level (close 25%)</label>
+                    <label>T1 — Index Level (close 25%)</label>
                     <input type="number" id="tc-t1-spx" placeholder="7150" step="1">
                 </div>
                 <div class="trade-card-field">
-                    <label>T2 — SPX Level (close 50%)</label>
+                    <label>T2 — Index Level (close 50%)</label>
                     <input type="number" id="tc-t2-spx" placeholder="7250" step="1">
                 </div>
                 <div class="trade-card-field">
-                    <label>T3 — Trail (SPX points behind price)</label>
+                    <label>T3 — Trail (index pts behind price)</label>
                     <input type="number" id="tc-t3-trail" placeholder="15" step="1">
                 </div>
             </div>
@@ -1291,7 +1292,7 @@
             <div class="trade-card-section">Stop Loss (required)</div>
             <div class="trade-card-grid">
                 <div class="trade-card-field">
-                    <label>Stop SPX Level (thesis invalidation)</label>
+                    <label>Stop Index Level (thesis invalidation)</label>
                     <input type="number" id="tc-stop-spx" placeholder="6980" step="1">
                 </div>
                 <div class="trade-card-field">
@@ -1343,9 +1344,17 @@
 
         <!-- ── Contract Analyzer (existing) ────────────────────────── -->
         <div class="exit-form" style="margin-top:0; margin-bottom:16px;">
-            <div class="exit-form-title">SPX Contract Analyzer — Run Probabilities on a Trade</div>
-            <div style="font-size:11px; color:#7d8590; margin-bottom:10px;">Enter your SPX option contract details to see probability of profit, P&L scenarios, and theta decay.</div>
+            <div class="exit-form-title">Contract Analyzer — Run Probabilities on a Trade</div>
+            <div style="font-size:11px; color:#7d8590; margin-bottom:10px;">Enter your option contract details to see probability of profit, P&amp;L scenarios, and theta decay.</div>
             <div class="exit-form-row">
+                <div class="exit-form-group">
+                    <label>Underlying</label>
+                    <select id="contract-underlying">
+                        <option value="SPX">SPX</option>
+                        <option value="QQQ">QQQ</option>
+                        <option value="NDX">NDX</option>
+                    </select>
+                </div>
                 <div class="exit-form-group">
                     <label>Strike</label>
                     <input type="number" id="contract-strike" placeholder="5700" step="5" style="width:100px;">
@@ -1384,7 +1393,7 @@
 
         <div id="options-loading" class="loading">
             <div class="spinner"></div>
-            <div>Click "SPX Options" to load options analysis</div>
+            <div>Click "Options" to load options analysis</div>
         </div>
         <div id="options-content" style="display:none;"></div>
         <div id="options-error" style="display:none;"></div>
@@ -1757,7 +1766,7 @@ function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
 
-    const tabMap = { confluence: 0, options: 1, portfolio: 2, scanner: 3, patterns: 4, signal: 5, gex: 6, backtest: 7, ndx: 8 };
+    const tabMap = { confluence: 0, ndx: 1, options: 2, portfolio: 3, scanner: 4, patterns: 5, signal: 6, gex: 7, backtest: 8 };
     document.querySelectorAll('.tab')[tabMap[tab]].classList.add('active');
     document.getElementById(tab + '-tab').classList.add('active');
 }
@@ -2072,8 +2081,8 @@ async function loadTradeLog() {
                         <th style="padding:4px 8px; text-align:left;">Type</th>
                         <th style="padding:4px 8px; text-align:left;">Contract</th>
                         <th style="padding:4px 8px; text-align:left;">Entry</th>
-                        <th style="padding:4px 8px; text-align:left;">Stop SPX</th>
-                        <th style="padding:4px 8px; text-align:left;">T1 SPX</th>
+                        <th style="padding:4px 8px; text-align:left;">Stop Level</th>
+                        <th style="padding:4px 8px; text-align:left;">T1 Level</th>
                         <th style="padding:4px 8px; text-align:left;">Tier</th>
                         <th style="padding:4px 8px; text-align:left;">Score</th>
                     </tr>
@@ -3706,6 +3715,7 @@ async function loadOptions() {
 
 // ===== CONTRACT ANALYZER =====
 async function analyzeContract() {
+    const underlying = document.getElementById('contract-underlying').value;
     const strike = document.getElementById('contract-strike').value;
     const exp = document.getElementById('contract-exp').value;
     const type = document.getElementById('contract-type').value;
@@ -3721,11 +3731,11 @@ async function analyzeContract() {
 
     document.getElementById('contract-result').style.display = 'block';
     document.getElementById('contract-result').innerHTML = '<div class="loading"><div class="spinner"></div><div>Analyzing contract...</div></div>';
-    setStatus('Analyzing SPX contract...');
+    setStatus('Analyzing ' + underlying + ' contract...');
 
     try {
         let url = '/api/options/contract?strike=' + strike + '&expiration=' + exp + '&type=' + type
-            + '&premium=' + premium + '&contracts=' + qty;
+            + '&premium=' + premium + '&contracts=' + qty + '&underlying=' + underlying;
         if (currentPrice) url += '&current_price=' + currentPrice;
         if (target) url += '&target=' + target;
 
