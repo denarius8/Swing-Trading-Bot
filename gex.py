@@ -7,7 +7,7 @@ Calculates dealer gamma exposure by strike to identify:
 - Key gamma strikes (support/resistance from dealer hedging)
 - Expected move implied by options pricing
 
-Uses Black-Scholes gamma calculation on SPX options chain data.
+Uses Black-Scholes gamma calculation on SPX/QQQ options chain data.
 Data is delayed ~15-20 min via Yahoo Finance.
 """
 
@@ -68,12 +68,19 @@ def bs_price(S, K, T, r, sigma, option_type="call"):
         return K * math.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
 
 
-def fetch_gex_data():
+def fetch_gex_data(index='SPX'):
     """
-    Fetch SPX options data and calculate gamma exposure by strike.
+    Fetch options data and calculate gamma exposure by strike.
+
+    For index='NDX': uses QQQ options (more liquid), scaled to NDX levels.
+    For index='SPX': uses SPX/^SPX options directly.
 
     Returns dict with GEX analysis results.
     """
+    if index == 'NDX':
+        return _fetch_gex_ndx()
+
+    # --- SPX path (existing logic) ---
     ticker = yf.Ticker("^SPX")
 
     # Get current price
@@ -113,6 +120,66 @@ def fetch_gex_data():
         target_expirations = list(expirations[:4])
 
     return _calculate_gex(ticker, spot, target_expirations, now)
+
+
+def _fetch_gex_ndx():
+    """NDX GEX via QQQ options (more liquid), scaled to NDX."""
+    # Get NDX spot
+    ndx_tk = yf.Ticker("^NDX")
+    ndx_hist = ndx_tk.history(period="1d")
+    if ndx_hist.empty:
+        raise RuntimeError("Could not fetch NDX price")
+    ndx_spot = float(ndx_hist["Close"].iloc[-1])
+
+    # Get QQQ price for scaling
+    qqq_tk = yf.Ticker("QQQ")
+    qqq_hist = qqq_tk.history(period="1d")
+    if qqq_hist.empty:
+        raise RuntimeError("Could not fetch QQQ price")
+    qqq_price = float(qqq_hist["Close"].iloc[-1])
+    scale_factor = ndx_spot / qqq_price  # typically ~40x
+
+    now = datetime.now()
+    try:
+        expirations = qqq_tk.options
+    except Exception:
+        raise RuntimeError("Could not fetch QQQ options")
+
+    target_expirations = []
+    for exp_str in expirations:
+        exp_date = datetime.strptime(exp_str, "%Y-%m-%d")
+        dte = (exp_date - now).days
+        if 0 < dte <= 45:
+            target_expirations.append(exp_str)
+    if not target_expirations:
+        target_expirations = list(expirations[:4])
+
+    result = _calculate_gex(qqq_tk, qqq_price, target_expirations, now)
+
+    # Scale QQQ values to NDX equivalent
+    result["spot"] = round(ndx_spot, 2)
+    result["data_source"] = "QQQ (NDX proxy)"
+    for s in result["strikes_data"]:
+        s["strike"] = round(s["strike"] * scale_factor, 0)
+        s["call_gex"] = round(s["call_gex"] * scale_factor, 0)
+        s["put_gex"] = round(s["put_gex"] * scale_factor, 0)
+        s["net_gex"] = round(s["net_gex"] * scale_factor, 0)
+    result["total_gex"] = round(result["total_gex"] * scale_factor, 0)
+    if result["gex_flip"]:
+        result["gex_flip"] = round(result["gex_flip"] * scale_factor, 2)
+    if result["gamma_resistance"]:
+        result["gamma_resistance"] = round(result["gamma_resistance"] * scale_factor, 0)
+    if result["gamma_support"]:
+        result["gamma_support"] = round(result["gamma_support"] * scale_factor, 0)
+    result["top_call_gamma"] = [
+        {"strike": round(s["strike"] * scale_factor, 0), "gex": round(s["gex"] * scale_factor, 0)}
+        for s in result.get("top_call_gamma", [])
+    ]
+    result["top_put_gamma"] = [
+        {"strike": round(s["strike"] * scale_factor, 0), "gex": round(s["gex"] * scale_factor, 0)}
+        for s in result.get("top_put_gamma", [])
+    ]
+    return result
 
 
 def _fetch_gex_via_spy(spx_spot):

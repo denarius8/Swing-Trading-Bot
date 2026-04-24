@@ -44,3 +44,13 @@ STRONG_BEAR_THRESHOLD = 0.35
 # Data cache
 CACHE_DIR = "cache"
 CACHE_EXPIRY_HOURS = 4
+
+# NDX (Nasdaq-100) config
+NDX_TICKER = "^NDX"
+NDX_OPTIONS_TICKER = "QQQ"   # QQQ options (more liquid than ^NDX options)
+NDX_MODEL_PATH = "model/ndx_model.pkl"
+NDX_SCALER_PATH = "model/ndx_scaler.pkl"
+NDX_FEATURE_PATH = "model/ndx_features.pkl"
+NDX_TREND_MODEL_PATH = "model/ndx_trend_model.pkl"
+NDX_TREND_SCALER_PATH = "model/ndx_trend_scaler.pkl"
+NDX_TREND_FEATURE_PATH = "model/ndx_trend_features.pkl"

@@ -1,4 +1,4 @@
-"""Fetch and cache SPX historical data."""
+"""Fetch and cache SPX/NDX historical data."""
 
 import os
 import time
@@ -22,17 +22,19 @@ def _safe_remove(path):
         pass
 
 
-def _cache_path():
+def _cache_path(cache_name="spx_daily.csv"):
     os.makedirs(config.CACHE_DIR, exist_ok=True)
-    return os.path.join(config.CACHE_DIR, "spx_daily.csv")
+    return os.path.join(config.CACHE_DIR, cache_name)
 
 
-def _cache_meta_path():
-    return os.path.join(config.CACHE_DIR, "meta.json")
+def _cache_meta_path(cache_name="spx_daily.csv"):
+    # Strip .csv extension and append _meta.json
+    base = cache_name.replace(".csv", "")
+    return os.path.join(config.CACHE_DIR, f"{base}_meta.json")
 
 
-def _cache_is_fresh():
-    meta = _cache_meta_path()
+def _cache_is_fresh(ticker, cache_name="spx_daily.csv"):
+    meta = _cache_meta_path(cache_name)
     if not os.path.exists(meta):
         return False
     with open(meta) as f:
@@ -50,13 +52,13 @@ def _cache_is_fresh():
 
     # Check if a new trading day has closed since cache was fetched
     # Load cached data to check the last date
-    cache = _cache_path()
+    cache = _cache_path(cache_name)
     if os.path.exists(cache):
         try:
             df = pd.read_csv(cache, index_col=0, parse_dates=True)
             last_cached_date = df.index[-1].date()
             # Fetch minimal fresh data to see if there's a newer close
-            fresh = yf.Ticker(config.TICKER).history(period="5d")
+            fresh = yf.Ticker(ticker).history(period="5d")
             if not fresh.empty:
                 latest_date = fresh.index[-1]
                 if hasattr(latest_date, 'tz') and latest_date.tz:
@@ -69,25 +71,25 @@ def _cache_is_fresh():
     return True
 
 
-def fetch_spx_data(force_refresh=False):
-    """Fetch 5 years of daily SPX OHLCV data. Uses cache if fresh."""
-    cache = _cache_path()
+def fetch_index_data(ticker, cache_name, force_refresh=False):
+    """Fetch 5 years of daily OHLCV data for any ticker. Uses cache if fresh."""
+    cache = _cache_path(cache_name)
 
-    if not force_refresh and _cache_is_fresh() and os.path.exists(cache):
-        print("[DATA] Loading from cache...")
+    if not force_refresh and _cache_is_fresh(ticker, cache_name) and os.path.exists(cache):
+        print(f"[DATA] Loading {cache_name} from cache...")
         df = pd.read_csv(cache, index_col=0, parse_dates=True)
         print(f"[DATA] {len(df)} trading days loaded (cached)")
         return df
 
-    print("[DATA] Fetching SPX data from Yahoo Finance...")
+    print(f"[DATA] Fetching {ticker} data from Yahoo Finance...")
     end = datetime.now()
     start = end - timedelta(days=config.DATA_PERIOD_YEARS * 365)
 
-    ticker = yf.Ticker(config.TICKER)
-    df = ticker.history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
+    tk = yf.Ticker(ticker)
+    df = tk.history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"))
 
     if df.empty:
-        raise RuntimeError("Failed to fetch SPX data. Check your internet connection.")
+        raise RuntimeError(f"Failed to fetch {ticker} data. Check your internet connection.")
 
     # Keep only OHLCV columns
     df = df[["Open", "High", "Low", "Close", "Volume"]]
@@ -95,10 +97,15 @@ def fetch_spx_data(force_refresh=False):
 
     # Delete old files first — macOS com.apple.provenance blocks in-place overwrites
     _safe_remove(cache)
-    _safe_remove(_cache_meta_path())
+    _safe_remove(_cache_meta_path(cache_name))
     df.to_csv(cache)
-    with open(_cache_meta_path(), "w") as f:
+    with open(_cache_meta_path(cache_name), "w") as f:
         json.dump({"fetched_at": datetime.now().isoformat(), "rows": len(df)}, f)
 
     print(f"[DATA] {len(df)} trading days fetched ({df.index[0].date()} to {df.index[-1].date()})")
     return df
+
+
+def fetch_spx_data(force_refresh=False):
+    """Fetch 5 years of daily SPX OHLCV data. Uses cache if fresh."""
+    return fetch_index_data(config.TICKER, "spx_daily.csv", force_refresh)

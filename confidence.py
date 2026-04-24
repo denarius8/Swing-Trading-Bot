@@ -4,7 +4,7 @@ Signal Confidence Overlay — Leading Indicators System
 Grades confluence signals as HIGH / MEDIUM / LOW confidence based on
 4 leading indicators that detect conditions BEFORE price moves:
   1. News Sentiment (headlines from yfinance)
-  2. Crude Oil Correlation (Brent/WTI direction vs SPX)
+  2. Crude Oil Correlation (Brent/WTI direction vs SPX/NDX)
   3. Dealer Positioning (GEX + options flow)
   4. Multi-Timeframe Heikin-Ashi Trends
 
@@ -74,7 +74,8 @@ HIGH_IMPACT_KEYWORDS = [
 
 def fetch_news_sentiment(symbol="^GSPC"):
     """Fetch and score recent news headlines for sentiment."""
-    cached = _get_cached("news_sentiment")
+    cache_key = f"news_sentiment_{symbol}"
+    cached = _get_cached(cache_key)
     if cached is not None:
         return cached
 
@@ -91,7 +92,7 @@ def fetch_news_sentiment(symbol="^GSPC"):
         news = ticker.news
 
         if not news:
-            _set_cached("news_sentiment", result)
+            _set_cached(cache_key, result)
             return result
 
         # Handle different yfinance news formats
@@ -190,7 +191,7 @@ def fetch_news_sentiment(symbol="^GSPC"):
         result["error"] = str(e)
 
     result = _sanitize(result)
-    _set_cached("news_sentiment", result)
+    _set_cached(cache_key, result)
     return result
 
 
@@ -281,9 +282,10 @@ def fetch_crude_correlation():
 
 # ─── 3. Dealer Positioning ───────────────────────────────────────────
 
-def fetch_dealer_positioning():
+def fetch_dealer_positioning(index='SPX'):
     """Analyze dealer positioning via GEX and options flow data."""
-    cached = _get_cached("dealer_positioning")
+    cache_key = f"dealer_positioning_{index}"
+    cached = _get_cached(cache_key)
     if cached is not None:
         return cached
 
@@ -301,7 +303,7 @@ def fetch_dealer_positioning():
     # Fetch GEX data
     try:
         from gex import fetch_gex_data
-        gex_data = fetch_gex_data()
+        gex_data = fetch_gex_data(index=index)
         result["dealer_position"] = gex_data.get("dealer_position", "UNKNOWN")
         result["total_gex"] = gex_data.get("total_gex", 0)
     except Exception:
@@ -310,7 +312,7 @@ def fetch_dealer_positioning():
     # Fetch options data for put/call ratios and IV
     try:
         from options_analyzer import analyze_spx_options
-        opts = analyze_spx_options()
+        opts = analyze_spx_options(index=index)
         if opts:
             result["pc_volume_ratio"] = opts.get("pc_volume_ratio")
             result["pc_oi_ratio"] = opts.get("pc_oi_ratio")
@@ -355,7 +357,7 @@ def fetch_dealer_positioning():
         result["warning"] = "Dealers SHORT GAMMA — expect amplified moves in either direction"
 
     result = _sanitize(result)
-    _set_cached("dealer_positioning", result)
+    _set_cached(cache_key, result)
     return result
 
 
@@ -441,9 +443,10 @@ def _score_ha_timeframe(df, label):
     }
 
 
-def fetch_multi_timeframe_signals():
+def fetch_multi_timeframe_signals(index='SPX'):
     """Fetch and score Heikin-Ashi trends across multiple timeframes."""
-    cached = _get_cached("mtf_signals")
+    cache_key = f"mtf_signals_{index}"
+    cached = _get_cached(cache_key)
     if cached is not None:
         return cached
 
@@ -456,13 +459,16 @@ def fetch_multi_timeframe_signals():
         "warning": None,
     }
 
+    # Choose symbol based on index
+    index_symbol = "^NDX" if index == 'NDX' else "^GSPC"
+
     # (label, symbol, interval, period, weight)
     # Weekly 3x, Daily 2x, 4-Hour 1x, 90-Min 1x — higher timeframes dominate
     timeframe_configs = [
-        ("Weekly", "^GSPC", "1wk", "6mo", 3),
-        ("Daily", "^GSPC", "1d", "3mo", 2),
-        ("4-Hour", "^GSPC", "60m", "5d", 1),    # Aggregate 60m into 4h
-        ("90-Min", "^GSPC", "90m", "5d", 1),
+        ("Weekly", index_symbol, "1wk", "6mo", 3),
+        ("Daily", index_symbol, "1d", "3mo", 2),
+        ("4-Hour", index_symbol, "60m", "5d", 1),    # Aggregate 60m into 4h
+        ("90-Min", index_symbol, "90m", "5d", 1),
     ]
 
     for label, symbol, interval, period, weight in timeframe_configs:
@@ -524,13 +530,13 @@ def fetch_multi_timeframe_signals():
         result["dominant_trend"] = "NEUTRAL"
 
     result = _sanitize(result)
-    _set_cached("mtf_signals", result)
+    _set_cached(cache_key, result)
     return result
 
 
 # ─── Master Confidence Assessment ────────────────────────────────────
 
-def assess_confidence(confluence_result):
+def assess_confidence(confluence_result, index='SPX'):
     """
     Grade a confluence signal's confidence using 4 leading indicators.
 
@@ -539,10 +545,13 @@ def assess_confidence(confluence_result):
     """
     direction = confluence_result.get("signal", "NO SIGNAL")
 
+    # Determine news symbol based on index
+    news_symbol = "^NDX" if index == 'NDX' else "^GSPC"
+
     # Import net premium signal
     try:
         from net_premium import fetch_net_premium_signal
-        net_prem = fetch_net_premium_signal()
+        net_prem = fetch_net_premium_signal(index=index)
     except Exception:
         net_prem = {"signal": 0, "label": "Unavailable", "detail": "Could not load net premium data"}
 
@@ -552,10 +561,10 @@ def assess_confidence(confluence_result):
         expected_sign = -1
     else:
         # No signal fired — still provide indicator data but grade is N/A
-        news = fetch_news_sentiment()
+        news = fetch_news_sentiment(symbol=news_symbol)
         crude = fetch_crude_correlation()
-        positioning = fetch_dealer_positioning()
-        mtf = fetch_multi_timeframe_signals()
+        positioning = fetch_dealer_positioning(index=index)
+        mtf = fetch_multi_timeframe_signals(index=index)
         return _sanitize({
             "grade": "N/A",
             "grade_class": "neutral",
@@ -573,10 +582,10 @@ def assess_confidence(confluence_result):
         })
 
     # Fetch all leading indicators
-    news = fetch_news_sentiment()
+    news = fetch_news_sentiment(symbol=news_symbol)
     crude = fetch_crude_correlation()
-    positioning = fetch_dealer_positioning()
-    mtf = fetch_multi_timeframe_signals()
+    positioning = fetch_dealer_positioning(index=index)
+    mtf = fetch_multi_timeframe_signals(index=index)
 
     # Count conflicts
     indicators = [

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SPX Trading Bot - Local Web Dashboard
+SPX/NDX Trading Bot - Local Web Dashboard
 Run: python3 app.py
 Open: http://localhost:5050
 """
@@ -14,7 +14,7 @@ from datetime import datetime
 
 warnings.filterwarnings("ignore")
 
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 
 # Ensure imports work from project dir
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -24,7 +24,7 @@ import config
 import numpy as np
 import pandas as pd
 from model import train_model, train_trend_model, predict_next_day, predict_trend, load_model, prepare_data
-from data_fetcher import fetch_spx_data
+from data_fetcher import fetch_spx_data, fetch_index_data
 from indicators import add_all_features, get_feature_columns
 from gex import fetch_gex_data
 from confluence import analyze_ticker, analyze_ticker_with_confidence, analyze_exit, scan_watchlist, DEFAULT_WATCHLIST
@@ -40,6 +40,12 @@ from trade_card import save_trade_card, get_recent_trades
 import yfinance as yf
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+
+
+def _get_index(default='SPX'):
+    """Get index param from request, validated."""
+    idx = request.args.get('index', default).upper().strip()
+    return 'NDX' if idx == 'NDX' else 'SPX'
 
 
 def signal_label(bull_prob):
@@ -76,7 +82,10 @@ def index():
 @app.route("/api/predict")
 def api_predict():
     try:
-        prediction = predict_next_day()
+        index = _get_index()
+        ticker_sym = config.NDX_TICKER if index == 'NDX' else "^GSPC"
+
+        prediction = predict_next_day(index=index)
         bull_prob = prediction["bull_probability"]
         f = prediction["features"]
 
@@ -95,7 +104,7 @@ def api_predict():
 
         try:
             # Fetch 30 days of fresh daily data — refreshes ALL key levels, not just close
-            fresh_daily = yf.download("^GSPC", period="30d", progress=False)
+            fresh_daily = yf.download(ticker_sym, period="30d", progress=False)
             if fresh_daily is not None and not fresh_daily.empty:
                 if isinstance(fresh_daily.columns, pd.MultiIndex):
                     fresh_daily.columns = fresh_daily.columns.get_level_values(0)
@@ -113,7 +122,7 @@ def api_predict():
                     low_20 = round(float(fresh_daily["Low"].tail(20).min()), 2)
 
             # Fetch intraday for live price during market hours
-            intra = yf.download("^GSPC", period="5d", interval="2m", progress=False)
+            intra = yf.download(ticker_sym, period="5d", interval="2m", progress=False)
             if intra is not None and not intra.empty:
                 if isinstance(intra.columns, pd.MultiIndex):
                     intra.columns = intra.columns.get_level_values(0)
@@ -144,7 +153,7 @@ def api_predict():
 
         # 5-day trend prediction
         try:
-            trend = predict_trend()
+            trend = predict_trend(index=index)
             trend_bull_prob = trend["bull_probability"]
             trend_data = {
                 "bull_prob": round(trend_bull_prob * 100, 1),
@@ -162,6 +171,7 @@ def api_predict():
 
         return jsonify({
             "success": True,
+            "index": index,
             "today": prediction_for,
             "data_date": prev_close_label,
             "prediction_for": prediction_for,
@@ -212,8 +222,12 @@ def api_predict():
 @app.route("/api/backtest")
 def api_backtest():
     try:
-        model, scaler, feature_cols = load_model()
-        raw_df = fetch_spx_data()
+        index = _get_index()
+        ticker_sym = config.NDX_TICKER if index == 'NDX' else config.TICKER
+        cache_name = "ndx_daily.csv" if index == 'NDX' else "spx_daily.csv"
+
+        model, scaler, feature_cols = load_model(index=index)
+        raw_df = fetch_index_data(ticker_sym, cache_name)
         df = prepare_data(raw_df)
 
         n_days = 30
@@ -244,6 +258,7 @@ def api_backtest():
 
         return jsonify({
             "success": True,
+            "index": index,
             "rows": rows,
             "accuracy": round(correct / len(recent) * 100, 1),
             "correct": correct,
@@ -256,9 +271,10 @@ def api_backtest():
 @app.route("/api/train")
 def api_train():
     try:
-        train_model(force_refresh_data=True)
-        train_trend_model(force_refresh_data=False)  # data already fresh from above
-        return jsonify({"success": True, "message": "Daily + 5-day trend models retrained with latest market data."})
+        index = _get_index()
+        train_model(force_refresh_data=True, index=index)
+        train_trend_model(force_refresh_data=False, index=index)  # data already fresh from above
+        return jsonify({"success": True, "index": index, "message": f"{index} daily + 5-day trend models retrained with latest market data."})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
@@ -266,7 +282,8 @@ def api_train():
 @app.route("/api/gex")
 def api_gex():
     try:
-        data = fetch_gex_data()
+        index = _get_index()
+        data = fetch_gex_data(index=index)
 
         # Build the chart data (top 20 strikes around spot for the bar chart)
         spot = data["spot"]
@@ -282,6 +299,7 @@ def api_gex():
 
         return jsonify({
             "success": True,
+            "index": index,
             "spot": data["spot"],
             "total_gex": data["total_gex"],
             "gex_flip": data["gex_flip"],
@@ -307,10 +325,11 @@ def api_gex():
 @app.route("/api/confluence")
 def api_confluence():
     try:
-        symbol = "^GSPC"  # SPX
+        index = _get_index()
+        symbol = config.NDX_TICKER if index == 'NDX' else "^GSPC"
         result = analyze_ticker_with_confidence(symbol)
         if result is None:
-            return jsonify({"success": False, "error": "Could not fetch SPX data"})
+            return jsonify({"success": False, "error": f"Could not fetch {index} data"})
 
         # Convert scores to serializable format
         scores_list = []
@@ -326,8 +345,13 @@ def api_confluence():
         # Fetch live/intraday data for current session info
         live = {}
         try:
-            # SPX indices support 2m interval, not 1m
-            for sym, interval in [("^GSPC", "2m"), ("^SPX", "2m"), ("SPY", "1m")]:
+            # Pick tickers to try based on index
+            if index == 'NDX':
+                candidates = [("^NDX", "2m"), ("QQQ", "1m")]
+            else:
+                candidates = [("^GSPC", "2m"), ("^SPX", "2m"), ("SPY", "1m")]
+
+            for sym, interval in candidates:
                 tk = yf.Ticker(sym)
                 intra = tk.history(period="5d", interval=interval, prepost=True)
                 daily = tk.history(period="5d")
@@ -344,7 +368,6 @@ def api_confluence():
 
                 # Today's intraday high/low
                 # Filter to today's bars only
-                import pandas as pd
                 last_date = intra.index[-1].date() if hasattr(intra.index[-1], 'date') else pd.Timestamp(intra.index[-1]).date()
                 today_bars = intra[intra.index.date == last_date] if hasattr(intra.index, 'date') else intra.tail(200)
                 if today_bars.empty:
@@ -353,9 +376,19 @@ def api_confluence():
                 today_high = float(today_bars["High"].max())
                 today_low = float(today_bars["Low"].min())
 
-                # If using SPY, scale to SPX (~10x)
+                # If using QQQ for NDX, scale to NDX price
                 scale = 1.0
-                if sym == "SPY":
+                if sym == "QQQ" and index == 'NDX':
+                    ndx_ref = yf.Ticker("^NDX").history(period="2d")
+                    ndx_price = float(ndx_ref["Close"].iloc[-1]) if not ndx_ref.empty else current * 40
+                    scale = ndx_price / current if current > 0 else 40.0
+                    current *= scale
+                    today_open *= scale
+                    prev_close *= scale
+                    today_high *= scale
+                    today_low *= scale
+                # If using SPY for SPX, scale to SPX price
+                elif sym == "SPY" and index == 'SPX':
                     scale = result["price"] / current if current > 0 else 10.0
                     current *= scale
                     today_open *= scale
@@ -395,7 +428,8 @@ def api_confluence():
 
         resp = {
             "success": True,
-            "symbol": "SPX",
+            "index": index,
+            "symbol": index,
             "price": result["price"],
             "change_1d": result["change_1d"],
             "signal": result["signal"],
@@ -435,11 +469,13 @@ def api_confluence():
 @app.route("/api/confidence")
 def api_confidence():
     try:
-        result = analyze_ticker("^GSPC")
+        index = _get_index()
+        symbol = config.NDX_TICKER if index == 'NDX' else "^GSPC"
+        result = analyze_ticker(symbol)
         if result is None:
-            return jsonify({"success": False, "error": "Could not fetch SPX data"})
+            return jsonify({"success": False, "error": f"Could not fetch {index} data"})
         from confidence import assess_confidence
-        conf = assess_confidence(result)
+        conf = assess_confidence(result, index=index)
         conf["success"] = True
         return jsonify(conf)
     except Exception as e:
@@ -449,7 +485,6 @@ def api_confidence():
 @app.route("/api/exit")
 def api_exit():
     try:
-        from flask import request
         symbol = request.args.get("symbol", "^GSPC")
         position_type = request.args.get("type", "long")  # "long" or "short"
         entry_price = request.args.get("entry", None)
@@ -499,7 +534,6 @@ def api_exit():
 @app.route("/api/scan")
 def api_scan():
     try:
-        from flask import request
         custom = request.args.get("tickers", None)
         symbols = None
         if custom:
@@ -548,7 +582,6 @@ def api_scan():
 @app.route("/api/options/contract")
 def api_options_contract():
     try:
-        from flask import request
         strike = float(request.args.get("strike", 0))
         expiration = request.args.get("expiration", "")
         option_type = request.args.get("type", "call")
@@ -579,16 +612,22 @@ def api_options_contract():
 @app.route("/api/options")
 def api_options():
     try:
-        result = analyze_spx_options()
+        index = _get_index()
+        result = analyze_spx_options(index=index)
         if result is None:
-            return jsonify({"success": False, "error": "Could not fetch SPX options data"})
+            return jsonify({"success": False, "error": f"Could not fetch {index} options data"})
         result["success"] = True
 
-        # Fetch live/intraday data (same as confluence)
+        # Fetch live/intraday data
         live = {}
         try:
-            import pandas as pd
-            for sym, interval in [("^GSPC", "2m"), ("^SPX", "2m"), ("SPY", "1m")]:
+            # Pick candidates based on index
+            if index == 'NDX':
+                candidates = [("^NDX", "2m"), ("QQQ", "1m")]
+            else:
+                candidates = [("^GSPC", "2m"), ("^SPX", "2m"), ("SPY", "1m")]
+
+            for sym, interval in candidates:
                 tk = yf.Ticker(sym)
                 intra = tk.history(period="5d", interval=interval, prepost=True)
                 daily = tk.history(period="5d")
@@ -611,7 +650,16 @@ def api_options():
                 today_low = float(today_bars["Low"].min())
 
                 scale = 1.0
-                if sym == "SPY":
+                if sym == "QQQ" and index == 'NDX':
+                    ndx_ref = yf.Ticker("^NDX").history(period="2d")
+                    ndx_price = float(ndx_ref["Close"].iloc[-1]) if not ndx_ref.empty else current * 40
+                    scale = ndx_price / current if current > 0 else 40.0
+                    current *= scale
+                    today_open *= scale
+                    prev_close *= scale
+                    today_high *= scale
+                    today_low *= scale
+                elif sym == "SPY" and index == 'SPX':
                     scale = result["spot"] / current if current > 0 else 10.0
                     current *= scale
                     today_open *= scale
@@ -657,7 +705,6 @@ def api_portfolio():
 @app.route("/api/portfolio/add", methods=["POST"])
 def api_portfolio_add():
     try:
-        from flask import request
         data = request.get_json() if request.is_json else {}
         # Also support form/query params
         if not data:
@@ -685,7 +732,6 @@ def api_portfolio_add():
 @app.route("/api/portfolio/remove", methods=["POST"])
 def api_portfolio_remove():
     try:
-        from flask import request
         data = request.get_json() if request.is_json else {}
         if not data:
             data = request.args.to_dict()
@@ -707,7 +753,6 @@ def api_portfolio_remove():
 @app.route("/api/portfolio/account", methods=["POST"])
 def api_portfolio_account():
     try:
-        from flask import request
         data = request.get_json() if request.is_json else {}
         if not data:
             data = request.args.to_dict()
@@ -724,7 +769,6 @@ def api_portfolio_account():
 @app.route("/api/risk-calc")
 def api_risk_calc():
     try:
-        from flask import request
         account = float(request.args.get("account", 10000))
         entry = float(request.args.get("entry", 0))
         stop = float(request.args.get("stop", 0))
@@ -742,15 +786,33 @@ def api_risk_calc():
 
 @app.route("/api/live")
 def api_live():
-    """Fetch current SPX price. Uses fast_info (direct quote) → 2m bars → daily bars."""
+    """Fetch current index price. Uses fast_info (direct quote) → 2m bars → daily bars.
+    Supports ?symbol= override for any ticker, or ?index=NDX/SPX for index routing.
+    """
     try:
-        import pandas as pd
+        sym_override = request.args.get('symbol', None)
+        index = _get_index()
+
         price = prev_close = day_open = day_high = day_low = None
         volume = 0
         source = None
 
+        # Determine which symbols to try
+        if sym_override:
+            primary_syms = [sym_override.upper()]
+            intraday_candidates = [(sym_override.upper(), "2m")]
+            daily_candidates = [sym_override.upper()]
+        elif index == 'NDX':
+            primary_syms = ["^NDX"]
+            intraday_candidates = [("^NDX", "2m"), ("QQQ", "1m")]
+            daily_candidates = ["^NDX"]
+        else:
+            primary_syms = ["^GSPC", "^SPX"]
+            intraday_candidates = [("^GSPC", "2m"), ("^SPX", "2m"), ("SPY", "1m")]
+            daily_candidates = ["^GSPC", "^SPX"]
+
         # --- Tier 1: fast_info — direct quote, most current, no bar lag ---
-        for sym in ["^GSPC", "^SPX"]:
+        for sym in primary_syms:
             try:
                 tk = yf.Ticker(sym)
                 fi = tk.fast_info
@@ -772,7 +834,7 @@ def api_live():
 
         # --- Tier 2: 2-minute intraday bars ---
         if price is None:
-            for sym, interval in [("^GSPC", "2m"), ("^SPX", "2m"), ("SPY", "1m")]:
+            for sym, interval in intraday_candidates:
                 try:
                     tk = yf.Ticker(sym)
                     intra = tk.history(period="5d", interval=interval, prepost=True)
@@ -792,7 +854,15 @@ def api_live():
                     day_high = float(today_bars["High"].max())
                     day_low  = float(today_bars["Low"].min())
 
-                    if sym == "SPY":
+                    # Scale QQQ to NDX if needed
+                    if sym == "QQQ" and index == 'NDX' and not sym_override:
+                        ref = yf.Ticker("^NDX").history(period="2d")
+                        ndx_ref = float(ref["Close"].iloc[-1]) if not ref.empty else price * 40
+                        scale = ndx_ref / price
+                        price *= scale; day_open *= scale
+                        prev_close *= scale; day_high *= scale; day_low *= scale
+                    # Scale SPY to SPX if needed
+                    elif sym == "SPY" and index == 'SPX' and not sym_override:
                         ref = yf.Ticker("^GSPC").history(period="2d")
                         spx_ref = float(ref["Close"].iloc[-1]) if not ref.empty else price * 10
                         scale = spx_ref / price
@@ -806,7 +876,7 @@ def api_live():
 
         # --- Tier 3: daily bars (pre/post market, weekends) ---
         if price is None:
-            for sym in ["^GSPC", "^SPX"]:
+            for sym in daily_candidates:
                 try:
                     tk   = yf.Ticker(sym)
                     hist = tk.history(period="5d")
@@ -825,7 +895,7 @@ def api_live():
                     continue
 
         if price is None:
-            return jsonify({"success": False, "error": "Could not fetch SPX price from any source"})
+            return jsonify({"success": False, "error": "Could not fetch price from any source"})
 
         change       = price - prev_close
         change_pct   = change / prev_close * 100 if prev_close > 0 else 0
@@ -833,6 +903,7 @@ def api_live():
 
         return jsonify({
             "success":       True,
+            "index":         index,
             "price":         round(price, 2),
             "open":          round(day_open, 2),
             "high":          round(day_high, 2),
@@ -867,7 +938,6 @@ def _sanitize(obj):
 @app.route("/api/patterns")
 def api_patterns():
     try:
-        from flask import request
         import time
         custom = request.args.get("tickers", None)
         mode = request.args.get("mode", "default")
@@ -905,17 +975,20 @@ def api_patterns():
 @app.route("/api/net-premium")
 def api_net_premium():
     try:
+        index = _get_index()
+
         # Auto-calculate today's net premium and save
-        today_result = auto_update_today()
+        today_result = auto_update_today(index=index)
 
         # Get historical table
-        table = get_premium_table(days=20)
+        table = get_premium_table(days=20, index=index)
 
         return jsonify({
             "success": True,
+            "index": index,
             "today": today_result.get("calculation") if today_result else None,
             "table": table,
-            "signal": fetch_net_premium_signal(),
+            "signal": fetch_net_premium_signal(index=index),
             "timestamp": datetime.now().strftime("%H:%M:%S"),
         })
     except Exception as e:
@@ -925,7 +998,6 @@ def api_net_premium():
 @app.route("/api/net-premium/update", methods=["POST"])
 def api_net_premium_update():
     try:
-        from flask import request
         data = request.get_json() if request.is_json else {}
         if not data:
             data = request.args.to_dict()
@@ -933,6 +1005,9 @@ def api_net_premium_update():
         date_str = data.get("date", datetime.now().strftime("%Y-%m-%d"))
         net_premium = data.get("net_premium")
         total_premium = data.get("total_premium")
+        index = data.get("index", "SPX").upper()
+        if index not in ("SPX", "NDX"):
+            index = "SPX"
 
         if net_premium is None:
             return jsonify({"success": False, "error": "net_premium value required"})
@@ -941,7 +1016,7 @@ def api_net_premium_update():
         if total_premium:
             total_premium = float(str(total_premium).replace(",", "").replace("$", ""))
 
-        entry = update_manual_premium(date_str, net_premium, total_premium)
+        entry = update_manual_premium(date_str, net_premium, total_premium, index=index)
         return jsonify({"success": True, "entry": entry})
     except Exception as e:
         return jsonify({"success": False, "error": str(e), "trace": traceback.format_exc()})
@@ -950,7 +1025,6 @@ def api_net_premium_update():
 @app.route("/api/checklist")
 def api_checklist():
     try:
-        from flask import request
         symbol = request.args.get("symbol", "^GSPC").strip().upper()
         if symbol == "SPX":
             symbol = "^GSPC"
@@ -966,7 +1040,6 @@ def api_checklist():
 @app.route("/api/trade-card", methods=["POST"])
 def api_save_trade_card():
     try:
-        from flask import request
         card = request.get_json()
         if not card:
             return jsonify({"success": False, "error": "No trade card data received"})
@@ -980,7 +1053,6 @@ def api_save_trade_card():
 @app.route("/api/trade-log")
 def api_trade_log():
     try:
-        from flask import request
         n = int(request.args.get("n", 20))
         trades = get_recent_trades(n)
         return jsonify({"success": True, "trades": trades, "total": len(trades)})
@@ -989,6 +1061,6 @@ def api_trade_log():
 
 
 if __name__ == "__main__":
-    print("\n  SPX Trading Bot Dashboard")
+    print("\n  SPX/NDX Trading Bot Dashboard")
     print("  Open in your browser: http://localhost:5050\n")
     app.run(host="0.0.0.0", port=5050, debug=False)

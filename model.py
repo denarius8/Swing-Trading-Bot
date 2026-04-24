@@ -1,4 +1,4 @@
-"""ML model training and prediction for SPX opening window direction."""
+"""ML model training and prediction for SPX/NDX opening window direction."""
 
 import os
 import subprocess
@@ -11,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import config
-from data_fetcher import fetch_spx_data
+from data_fetcher import fetch_spx_data, fetch_index_data
 from indicators import add_all_features, get_feature_columns
 
 warnings.filterwarnings("ignore")
@@ -27,6 +27,19 @@ def _safe_remove(path):
             os.remove(path)
     except Exception:
         pass
+
+
+def _get_index_config(index='SPX'):
+    """Return (ticker, model_path, scaler_path, feature_path, trend_model_path, trend_scaler_path, trend_feature_path, cache_name)"""
+    if index == 'NDX':
+        return (config.NDX_TICKER,
+                config.NDX_MODEL_PATH, config.NDX_SCALER_PATH, config.NDX_FEATURE_PATH,
+                config.NDX_TREND_MODEL_PATH, config.NDX_TREND_SCALER_PATH, config.NDX_TREND_FEATURE_PATH,
+                "ndx_daily.csv")
+    return (config.TICKER,
+            config.MODEL_PATH, config.SCALER_PATH, config.FEATURE_PATH,
+            config.TREND_MODEL_PATH, config.TREND_SCALER_PATH, config.TREND_FEATURE_PATH,
+            "spx_daily.csv")
 
 
 def prepare_data(df):
@@ -49,14 +62,16 @@ def prepare_data(df):
     return df
 
 
-def train_model(force_refresh_data=False):
+def train_model(force_refresh_data=False, index='SPX'):
     """Train the ensemble model and save artifacts."""
+    ticker, model_path, scaler_path, feature_path, _, _, _, cache_name = _get_index_config(index)
+
     print("\n" + "=" * 60)
-    print("  SPX PREDICTIVE MODEL - TRAINING")
+    print(f"  {index} PREDICTIVE MODEL - TRAINING")
     print("=" * 60)
 
     # Fetch and prepare data
-    raw_df = fetch_spx_data(force_refresh=force_refresh_data)
+    raw_df = fetch_index_data(ticker, cache_name, force_refresh=force_refresh_data)
     df = prepare_data(raw_df)
 
     feature_cols = get_feature_columns(df)
@@ -150,35 +165,39 @@ def train_model(force_refresh_data=False):
 
     # Save model artifacts (delete old files so macOS doesn't block with com.apple.provenance)
     os.makedirs("model", exist_ok=True)
-    for path in [config.MODEL_PATH, config.SCALER_PATH, config.FEATURE_PATH]:
+    for path in [model_path, scaler_path, feature_path]:
         _safe_remove(path)
-    joblib.dump(model, config.MODEL_PATH)
-    joblib.dump(scaler, config.SCALER_PATH)
-    joblib.dump(feature_cols, config.FEATURE_PATH)
-    print(f"\n[MODEL] Saved to {config.MODEL_PATH}")
+    joblib.dump(model, model_path)
+    joblib.dump(scaler, scaler_path)
+    joblib.dump(feature_cols, feature_path)
+    print(f"\n[MODEL] Saved to {model_path}")
 
     return model, scaler, feature_cols
 
 
-def load_model():
+def load_model(index='SPX'):
     """Load trained model artifacts."""
-    if not os.path.exists(config.MODEL_PATH):
-        print("[MODEL] No trained model found. Training now...")
-        return train_model()
+    ticker, model_path, scaler_path, feature_path, _, _, _, cache_name = _get_index_config(index)
 
-    model = joblib.load(config.MODEL_PATH)
-    scaler = joblib.load(config.SCALER_PATH)
-    feature_cols = joblib.load(config.FEATURE_PATH)
+    if not os.path.exists(model_path):
+        print(f"[MODEL] No trained model found for {index}. Training now...")
+        return train_model(index=index)
+
+    model = joblib.load(model_path)
+    scaler = joblib.load(scaler_path)
+    feature_cols = joblib.load(feature_path)
     return model, scaler, feature_cols
 
 
-def train_trend_model(force_refresh_data=False):
+def train_trend_model(force_refresh_data=False, index='SPX'):
     """Train the 5-day trend model: will price be higher in 5 trading days?"""
+    ticker, _, _, _, trend_model_path, trend_scaler_path, trend_feature_path, cache_name = _get_index_config(index)
+
     print("\n" + "=" * 60)
-    print("  SPX 5-DAY TREND MODEL - TRAINING")
+    print(f"  {index} 5-DAY TREND MODEL - TRAINING")
     print("=" * 60)
 
-    raw_df = fetch_spx_data(force_refresh=force_refresh_data)
+    raw_df = fetch_index_data(ticker, cache_name, force_refresh=force_refresh_data)
     df = add_all_features(raw_df)
 
     # Target: will price be up >0.5% in 5 trading days? (filters noise around flat)
@@ -233,37 +252,40 @@ def train_trend_model(force_refresh_data=False):
     print(f"[TREND] Test Accuracy: {accuracy:.1%}")
 
     os.makedirs("model", exist_ok=True)
-    for path in [config.TREND_MODEL_PATH, config.TREND_SCALER_PATH, config.TREND_FEATURE_PATH]:
+    for path in [trend_model_path, trend_scaler_path, trend_feature_path]:
         _safe_remove(path)
-    joblib.dump(model, config.TREND_MODEL_PATH)
-    joblib.dump(scaler, config.TREND_SCALER_PATH)
-    joblib.dump(feature_cols, config.TREND_FEATURE_PATH)
-    print(f"[TREND] Saved to {config.TREND_MODEL_PATH}")
+    joblib.dump(model, trend_model_path)
+    joblib.dump(scaler, trend_scaler_path)
+    joblib.dump(feature_cols, trend_feature_path)
+    print(f"[TREND] Saved to {trend_model_path}")
 
     return model, scaler, feature_cols
 
 
-def load_trend_model():
+def load_trend_model(index='SPX'):
     """Load 5-day trend model, training it if it doesn't exist."""
-    if not os.path.exists(config.TREND_MODEL_PATH):
-        print("[TREND] No trend model found. Training now...")
-        return train_trend_model()
-    model = joblib.load(config.TREND_MODEL_PATH)
-    scaler = joblib.load(config.TREND_SCALER_PATH)
-    feature_cols = joblib.load(config.TREND_FEATURE_PATH)
+    ticker, _, _, _, trend_model_path, trend_scaler_path, trend_feature_path, cache_name = _get_index_config(index)
+
+    if not os.path.exists(trend_model_path):
+        print(f"[TREND] No trend model found for {index}. Training now...")
+        return train_trend_model(index=index)
+    model = joblib.load(trend_model_path)
+    scaler = joblib.load(trend_scaler_path)
+    feature_cols = joblib.load(trend_feature_path)
     return model, scaler, feature_cols
 
 
-def predict_trend():
+def predict_trend(index='SPX'):
     """
     Generate 5-day swing trend signal using a hybrid approach:
     - ML probability (5-day forward return > 0.5%)
     - Rules-based trend score from MA alignment, ADX, momentum
     Combined into a single directional probability.
     """
-    model, scaler, feature_cols = load_trend_model()
+    model, scaler, feature_cols = load_trend_model(index=index)
 
-    raw_df = fetch_spx_data(force_refresh=False)
+    ticker, _, _, _, _, _, _, cache_name = _get_index_config(index)
+    raw_df = fetch_index_data(ticker, cache_name, force_refresh=False)
     df = add_all_features(raw_df)
     df = df.dropna()
 
@@ -336,12 +358,14 @@ def predict_trend():
     }
 
 
-def predict_next_day():
+def predict_next_day(index='SPX'):
     """Generate prediction for the next trading day using latest data."""
-    model, scaler, feature_cols = load_model()
+    model, scaler, feature_cols = load_model(index=index)
+
+    ticker, _, _, _, _, _, _, cache_name = _get_index_config(index)
 
     # Always fetch fresh data for predictions to ensure we use the latest close
-    raw_df = fetch_spx_data(force_refresh=True)
+    raw_df = fetch_index_data(ticker, cache_name, force_refresh=True)
     df = add_all_features(raw_df)
     df = df.dropna()
 

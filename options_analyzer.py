@@ -11,9 +11,15 @@ from scipy.stats import norm
 import ta
 
 
-def _fetch_options_data(symbol="^SPX"):
+def _fetch_options_data(symbol="^SPX", index='SPX'):
     """Fetch current options chain and price data."""
-    for sym in [symbol, "^GSPC", "^SPX"]:
+    # For NDX, use QQQ as primary (more liquid options), fallback to ^NDX
+    if index == 'NDX':
+        candidates = ["QQQ", "^NDX"]
+    else:
+        candidates = [symbol, "^GSPC", "^SPX"]
+
+    for sym in candidates:
         try:
             ticker = yf.Ticker(sym)
             hist = ticker.history(period="6mo")
@@ -79,12 +85,12 @@ def _calculate_greeks(S, K, T, r, sigma, option_type="call"):
     }
 
 
-def analyze_spx_options():
+def analyze_spx_options(index='SPX'):
     """
-    Full SPX options analysis for 0DTE-30DTE trading.
+    Full SPX/NDX options analysis for 0DTE-30DTE trading.
     Returns comprehensive data for the dashboard.
     """
-    data = _fetch_options_data()
+    data = _fetch_options_data(index=index)
     if data is None:
         return None
 
@@ -99,6 +105,7 @@ def analyze_spx_options():
         "spot": round(spot, 2),
         "prev_close": round(prev_close, 2),
         "data_source": data["symbol"],
+        "index": index,
         "timestamp": datetime.now().strftime("%H:%M:%S"),
     }
 

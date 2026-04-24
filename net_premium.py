@@ -1,6 +1,6 @@
 """
-SPX Net Premium Tracker
-Approximates net dollar flow into SPX options (bullish vs bearish positioning).
+SPX/NDX Net Premium Tracker
+Approximates net dollar flow into options (bullish vs bearish positioning).
 Auto-calculates from yfinance options chains with manual Unusual Whales override.
 """
 
@@ -12,31 +12,48 @@ from datetime import datetime, timedelta
 
 
 CACHE_FILE = os.path.join("cache", "net_premium.json")
+NDX_CACHE_FILE = os.path.join("cache", "ndx_net_premium.json")
 
 
-def _load_history():
+def _get_cache_file(index='SPX'):
+    """Return the cache file path for the given index."""
+    if index == 'NDX':
+        return NDX_CACHE_FILE
+    return CACHE_FILE
+
+
+def _load_history(index='SPX'):
     """Load premium history from disk."""
-    if os.path.exists(CACHE_FILE):
-        with open(CACHE_FILE) as f:
+    cache_file = _get_cache_file(index)
+    if os.path.exists(cache_file):
+        with open(cache_file) as f:
             return json.load(f)
     return {"history": []}
 
 
-def _save_history(data):
+def _save_history(data, index='SPX'):
     """Save premium history to disk."""
     os.makedirs("cache", exist_ok=True)
-    with open(CACHE_FILE, "w") as f:
+    cache_file = _get_cache_file(index)
+    with open(cache_file, "w") as f:
         json.dump(data, f, indent=2)
 
 
-def calculate_net_premium():
+def calculate_net_premium(index='SPX'):
     """
-    Approximate net premium from yfinance SPX options chain.
+    Approximate net premium from yfinance options chain.
     Net premium = call_flow - put_flow (positive = bullish, negative = bearish).
     Weights shorter-dated expirations higher.
+
+    For SPX: uses ^SPX options chain.
+    For NDX: uses QQQ options chain (more liquid than ^NDX options).
     """
     try:
-        ticker = yf.Ticker("^SPX")
+        if index == 'NDX':
+            ticker = yf.Ticker("QQQ")
+        else:
+            ticker = yf.Ticker("^SPX")
+
         expirations = ticker.options
         if not expirations:
             return None
@@ -130,9 +147,9 @@ def calculate_net_premium():
 
 
 def save_daily_premium(date_str, net_premium, total_premium, source="auto",
-                       spx_open=None, spx_close=None, change_pct=None):
+                       spx_open=None, spx_close=None, change_pct=None, index='SPX'):
     """Append or update a day's premium data in history."""
-    data = _load_history()
+    data = _load_history(index)
     history = data["history"]
 
     # Check if entry for this date already exists
@@ -176,13 +193,13 @@ def save_daily_premium(date_str, net_premium, total_premium, source="auto",
 
     # Keep last 60 days
     data["history"] = history[:60]
-    _save_history(data)
+    _save_history(data, index)
     return entry
 
 
-def update_manual_premium(date_str, net_premium_value, total_premium_value=None):
+def update_manual_premium(date_str, net_premium_value, total_premium_value=None, index='SPX'):
     """Override a day's net premium with the real Unusual Whales value."""
-    data = _load_history()
+    data = _load_history(index)
     history = data["history"]
 
     # Find existing entry
@@ -193,7 +210,7 @@ def update_manual_premium(date_str, net_premium_value, total_premium_value=None)
             if total_premium_value is not None:
                 entry["total_premium"] = total_premium_value
             entry["source"] = "manual"
-            _save_history(data)
+            _save_history(data, index)
             return entry
 
     # No existing entry — create one with manual data
@@ -210,22 +227,23 @@ def update_manual_premium(date_str, net_premium_value, total_premium_value=None)
     history.append(entry)
     history.sort(key=lambda x: x["date"], reverse=True)
     data["history"] = history[:60]
-    _save_history(data)
+    _save_history(data, index)
     return entry
 
 
-def get_premium_table(days=20):
+def get_premium_table(days=20, index='SPX'):
     """
     Return last N days of premium data for display.
-    Merges stored history with SPX OHLC data.
+    Merges stored history with OHLC data from the appropriate index.
     """
-    data = _load_history()
+    data = _load_history(index)
     history = data["history"][:days]
 
-    # Fill in any missing SPX OHLC data
+    # Fill in any missing OHLC data using the appropriate index ticker
+    ohlc_ticker = "^NDX" if index == 'NDX' else "^GSPC"
     if history:
         try:
-            tk = yf.Ticker("^GSPC")
+            tk = yf.Ticker(ohlc_ticker)
             daily = tk.history(period="2mo")
             if not daily.empty:
                 for entry in history:
@@ -278,14 +296,14 @@ def get_premium_table(days=20):
     }
 
 
-def fetch_net_premium_signal():
+def fetch_net_premium_signal(index='SPX'):
     """
     Return a signal for the confidence system based on net premium streak.
     4+ consecutive positive → bullish (+1)
     4+ consecutive negative → bearish (-1)
     Otherwise → neutral (0)
     """
-    table = get_premium_table(days=10)
+    table = get_premium_table(days=10, index=index)
     streak = table["streak"]
     direction = table["streak_direction"]
 
@@ -326,20 +344,21 @@ def fetch_net_premium_signal():
     }
 
 
-def auto_update_today():
+def auto_update_today(index='SPX'):
     """Calculate today's net premium and save it. Called by the API."""
-    result = calculate_net_premium()
+    result = calculate_net_premium(index=index)
     if result is None:
         return None
 
     today_str = datetime.now().strftime("%Y-%m-%d")
 
-    # Get today's SPX OHLC
+    # Get today's OHLC for the appropriate index
+    ohlc_ticker = "^NDX" if index == 'NDX' else "^GSPC"
     spx_open = None
     spx_close = None
     change_pct = None
     try:
-        tk = yf.Ticker("^GSPC")
+        tk = yf.Ticker(ohlc_ticker)
         daily = tk.history(period="5d")
         if not daily.empty:
             spx_close = round(float(daily["Close"].iloc[-1]), 2)
@@ -358,6 +377,7 @@ def auto_update_today():
         spx_open=spx_open,
         spx_close=spx_close,
         change_pct=change_pct,
+        index=index,
     )
 
     return {
