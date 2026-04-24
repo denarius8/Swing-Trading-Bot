@@ -1133,6 +1133,9 @@
             text-align: center;
             margin-top: 16px;
         }
+
+        /* NDX Dashboard */
+        .ndx-badge { background:#1a2744; color:#58a6ff; border:1px solid #1f6feb; border-radius:4px; padding:2px 8px; font-size:10px; font-weight:700; letter-spacing:1px; }
     </style>
 </head>
 <body>
@@ -1166,6 +1169,7 @@
         <button class="tab" onclick="loadPrediction()">ML Signal</button>
         <button class="tab" onclick="loadGex()">GEX</button>
         <button class="tab" onclick="loadBacktest()">Backtest</button>
+        <button class="tab" onclick="loadNdxDashboard()" id="ndx-main-tab">NDX</button>
     </div>
 
     <div id="confluence-tab" class="tab-content active">
@@ -1616,6 +1620,51 @@
         <div id="backtest-error" style="display:none;"></div>
     </div>
 
+    <!-- ══════════════════════════════════════════════════════
+         NDX PARALLEL DASHBOARD
+         ══════════════════════════════════════════════════════ -->
+    <div id="ndx-tab" class="tab-content">
+        <!-- NDX sub-tab bar -->
+        <div class="tabs" style="margin-bottom:0; border-bottom:1px solid #21262d;">
+            <button class="tab active" id="ndx-sub-confluence" onclick="loadNdxConfluence()">Confluence</button>
+            <button class="tab" id="ndx-sub-options" onclick="loadNdxOptions()">QQQ Options</button>
+            <button class="tab" id="ndx-sub-ml" onclick="loadNdxPrediction()">ML Signal</button>
+            <button class="tab" id="ndx-sub-gex" onclick="loadNdxGex()">GEX (QQQ)</button>
+            <button class="tab" id="ndx-sub-backtest" onclick="loadNdxBacktest()">Backtest</button>
+        </div>
+
+        <!-- NDX sub-tab content areas -->
+        <div id="ndx-confluence-tab" class="ndx-sub-content" style="display:block; padding-top:24px;">
+            <div id="ndx-confluence-loading" class="loading"><div class="spinner"></div><div>Click "Confluence" to load NDX analysis</div></div>
+            <div id="ndx-confluence-content" style="display:none;"></div>
+            <div id="ndx-confluence-error" style="display:none;"></div>
+        </div>
+
+        <div id="ndx-options-tab" class="ndx-sub-content" style="display:none; padding-top:24px;">
+            <div id="ndx-options-loading" class="loading"><div class="spinner"></div><div>Click "QQQ Options" to load options analysis</div></div>
+            <div id="ndx-options-content" style="display:none;"></div>
+            <div id="ndx-options-error" style="display:none;"></div>
+        </div>
+
+        <div id="ndx-ml-tab" class="ndx-sub-content" style="display:none; padding-top:24px;">
+            <div id="ndx-ml-loading" class="loading"><div class="spinner"></div><div>Click "ML Signal" to load NDX prediction</div></div>
+            <div id="ndx-ml-content" style="display:none;"></div>
+            <div id="ndx-ml-error" style="display:none;"></div>
+        </div>
+
+        <div id="ndx-gex-tab" class="ndx-sub-content" style="display:none; padding-top:24px;">
+            <div id="ndx-gex-loading" class="loading"><div class="spinner"></div><div>Click "GEX (QQQ)" to load gamma exposure</div></div>
+            <div id="ndx-gex-content" style="display:none;"></div>
+            <div id="ndx-gex-error" style="display:none;"></div>
+        </div>
+
+        <div id="ndx-backtest-tab" class="ndx-sub-content" style="display:none; padding-top:24px;">
+            <div id="ndx-backtest-loading" class="loading"><div class="spinner"></div><div>Click "Backtest" to load NDX backtest</div></div>
+            <div id="ndx-backtest-content" style="display:none;"></div>
+            <div id="ndx-backtest-error" style="display:none;"></div>
+        </div>
+    </div>
+
     <div class="disclaimer">
         This tool is for research purposes only. Past model performance does not predict future results.
         Do not use as your sole basis for trading decisions.
@@ -1708,7 +1757,7 @@ function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
 
-    const tabMap = { confluence: 0, options: 1, portfolio: 2, scanner: 3, patterns: 4, signal: 5, gex: 6, backtest: 7 };
+    const tabMap = { confluence: 0, options: 1, portfolio: 2, scanner: 3, patterns: 4, signal: 5, gex: 6, backtest: 7, ndx: 8 };
     document.querySelectorAll('.tab')[tabMap[tab]].classList.add('active');
     document.getElementById(tab + '-tab').classList.add('active');
 }
@@ -4009,6 +4058,1088 @@ async function calcRisk() {
         document.getElementById('risk-calc-result').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// NDX PARALLEL DASHBOARD
+// ═══════════════════════════════════════════════════════════════════
+
+function loadNdxDashboard() {
+    switchTab('ndx');
+    // Load confluence on first visit (loading spinner still visible = not yet loaded)
+    if (document.getElementById('ndx-confluence-content').style.display === 'none' &&
+        document.getElementById('ndx-confluence-loading').style.display !== 'none') {
+        loadNdxConfluence();
+    }
+    switchNdxSubTab('confluence');
+}
+
+function switchNdxSubTab(name) {
+    const subMap = {
+        confluence: 'ndx-confluence-tab',
+        options:    'ndx-options-tab',
+        ml:         'ndx-ml-tab',
+        gex:        'ndx-gex-tab',
+        backtest:   'ndx-backtest-tab'
+    };
+    Object.values(subMap).forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+    document.querySelectorAll('[id^="ndx-sub-"]').forEach(function(btn) {
+        btn.classList.remove('active');
+    });
+    var target = subMap[name];
+    if (target) document.getElementById(target).style.display = 'block';
+    var activeBtn = document.getElementById('ndx-sub-' + name);
+    if (activeBtn) activeBtn.classList.add('active');
+}
+
+// ── NDX Confluence ────────────────────────────────────────────────
+async function loadNdxConfluence() {
+    switchNdxSubTab('confluence');
+    document.getElementById('ndx-confluence-loading').style.display = 'block';
+    document.getElementById('ndx-confluence-loading').innerHTML = '<div class="spinner"></div><div>Analyzing NDX confluence indicators...</div>';
+    document.getElementById('ndx-confluence-content').style.display = 'none';
+    document.getElementById('ndx-confluence-error').style.display = 'none';
+    setStatus('Running NDX confluence analysis...');
+
+    try {
+        const res = await fetch('/api/confluence?index=NDX');
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        const signalColor = data.signal === 'ENTER LONG' ? '#3fb950' :
+                           data.signal === 'ENTER SHORT' ? '#ff7b72' : '#7d8590';
+
+        // Build indicator checklist
+        let indicatorRows = '';
+        data.scores.forEach(function(s) {
+            const iconClass = s.score === 1 ? 'bull' : s.score === -1 ? 'bear' : 'neutral';
+            const icon = s.score === 1 ? '&#x2191;' : s.score === -1 ? '&#x2193;' : '&#x2022;';
+            indicatorRows += '<div class="indicator-row">'
+                + '<div class="indicator-icon ' + iconClass + '">' + icon + '</div>'
+                + '<div class="indicator-info">'
+                + '<div class="indicator-name">' + s.label + '</div>'
+                + '<div class="indicator-detail">' + s.detail + '</div>'
+                + '</div>'
+                + '<div class="indicator-reason">' + s.reason + '</div>'
+                + '</div>';
+        });
+
+        // Build confluence meter dots
+        let meterDots = '';
+        for (let i = 0; i < 10; i++) {
+            if (i < data.long_count) {
+                meterDots += '<div class="confluence-dot long">&#x2191;</div>';
+            } else if (i < data.long_count + data.neutral_count) {
+                meterDots += '<div class="confluence-dot neutral">&#x2022;</div>';
+            } else {
+                meterDots += '<div class="confluence-dot short">&#x2193;</div>';
+            }
+        }
+
+        // Build live session bar if available
+        let liveHtml = '';
+        if (data.live) {
+            const lv = data.live;
+            const closeColor = lv.change_from_close >= 0 ? '#3fb950' : '#ff7b72';
+            const closeSign = lv.change_from_close >= 0 ? '+' : '';
+            const openColor = lv.change_from_open >= 0 ? '#3fb950' : '#ff7b72';
+            const openSign = lv.change_from_open >= 0 ? '+' : '';
+            const rangeWidth = Math.max(0, Math.min(100, lv.day_range_pct));
+
+            liveHtml = '<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; margin-top:16px; padding:16px; background:#0d1117; border-radius:10px; border:1px solid #21262d;">'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:0.5px;">Live Price</div>'
+                + '<div style="font-size:22px; font-weight:700; color:#e6edf3;">' + lv.current.toLocaleString() + '</div>'
+                + '<div style="font-size:11px; color:' + closeColor + ';">' + closeSign + lv.change_from_close + ' (' + closeSign + lv.change_from_close_pct + '%)</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Prev Close</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#e6edf3;">' + lv.prev_close.toLocaleString() + '</div>'
+                + '<div style="font-size:10px; color:#484f58;">indicators based on this</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Today Open</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#e6edf3;">' + lv.open.toLocaleString() + '</div>'
+                + '<div style="font-size:11px; color:' + openColor + ';">' + openSign + lv.change_from_open_pct + '% from open</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">Session Low</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#ff7b72;">' + lv.low.toLocaleString() + '</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#3fb950; text-transform:uppercase;">Session High</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#3fb950;">' + lv.high.toLocaleString() + '</div>'
+                + '</div>'
+                + '</div>'
+                + '<div style="margin:8px 16px 0; padding:0 16px;">'
+                + '<div style="height:6px; background:#21262d; border-radius:3px; position:relative; overflow:visible;">'
+                + '<div style="height:100%; width:100%; border-radius:3px; background:linear-gradient(90deg, #f47067, #d29922, #3fb950);"></div>'
+                + '<div style="position:absolute; top:-3px; left:' + rangeWidth + '%; width:12px; height:12px; background:#e6edf3; border-radius:50%; border:2px solid #0a0e17; transform:translateX(-50%);"></div>'
+                + '</div>'
+                + '<div style="display:flex; justify-content:space-between; font-size:9px; color:#484f58; margin-top:4px;">'
+                + '<span>Low ' + lv.low.toLocaleString() + '</span>'
+                + '<span>Day Range Position: ' + lv.day_range_pct + '%</span>'
+                + '<span>High ' + lv.high.toLocaleString() + '</span>'
+                + '</div>'
+                + '</div>';
+        }
+
+        document.getElementById('ndx-confluence-content').innerHTML = `
+            <div class="signal-card" style="text-align:center;">
+                <div class="signal-date">NDX Swing Trade Confluence <span class="ndx-badge" style="vertical-align:middle;">NDX</span></div>
+                <div style="font-size:11px; color:#484f58; margin-bottom:8px;">${data.timestamp} | Threshold: ${data.threshold}/10 indicators must align</div>
+                <div class="signal-close"><span>NDX</span> ${data.live ? data.live.current.toLocaleString() : data.price.toLocaleString()}</div>
+                <div style="font-size:12px; color:${data.change_1d >= 0 ? '#3fb950' : '#ff7b72'}; margin-bottom:4px;">
+                    ${data.change_1d >= 0 ? '+' : ''}${data.change_1d}% prev close
+                </div>
+                ${liveHtml}
+                <div style="margin-top:20px; display:flex; align-items:flex-start; justify-content:center; gap:24px; flex-wrap:wrap;">
+                    <div>
+                        <div style="font-size:10px; color:#484f58; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px;">Trend System (10)</div>
+                        <div class="confluence-signal ${data.signal_class}">${data.signal}</div>
+                        <div class="confluence-score" style="color:${signalColor}; font-size:28px; margin-top:4px;">${data.strength}/10</div>
+                        <div style="color:#7d8590; font-size:11px; margin-top:2px;">
+                            <span style="color:#3fb950;">${data.long_count}↑</span> &nbsp;
+                            <span style="color:#7d8590;">${data.neutral_count}•</span> &nbsp;
+                            <span style="color:#ff7b72;">${data.short_count}↓</span>
+                        </div>
+                    </div>
+                    ${data.reversal ? (() => {
+                        const rev = data.reversal;
+                        const revColor = rev.signal === 'ENTER LONG'  ? '#3fb950' :
+                                         rev.signal === 'ENTER SHORT' ? '#ff7b72' :
+                                         rev.signal.includes('WATCH') ? '#d29922' : '#7d8590';
+                        const regimeLabelColor = rev.regime === 'EXTREME' ? '#ff7b72' : rev.regime === 'ELEVATED' ? '#d29922' : '#484f58';
+                        const revBadgeStyle = rev.signal_class === 'enter-long'
+                            ? 'background:#0d4429;color:#3fb950;border:2px solid #238636;text-shadow:0 0 20px rgba(63,185,80,0.4);'
+                            : rev.signal_class === 'enter-short'
+                            ? 'background:#4a1111;color:#ff7b72;border:2px solid #f85149;text-shadow:0 0 20px rgba(248,81,73,0.4);'
+                            : (rev.signal_class === 'lean-bull' || rev.signal_class === 'lean-bear')
+                            ? 'background:#2d1f00;color:#e3b341;border:2px solid #d29922;text-shadow:0 0 20px rgba(210,153,34,0.4);'
+                            : 'background:#1c1e23;color:#7d8590;border:2px solid #30363d;';
+                        return '<div style="border-left:1px solid #21262d; padding-left:24px;">'
+                            + '<div style="font-size:10px; color:#484f58; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px;">Reversal Entry (6) &nbsp;<span style="color:' + regimeLabelColor + ';">' + rev.regime + '</span></div>'
+                            + '<div class="confluence-signal" style="' + revBadgeStyle + '">' + rev.signal + '</div>'
+                            + '<div style="font-size:28px; font-weight:800; color:' + revColor + '; margin-top:4px;">' + rev.long_count + '/' + (rev.long_count + rev.short_count + rev.neutral_count) + '</div>'
+                            + '<div style="color:#7d8590; font-size:11px; margin-top:2px;">'
+                            + '<span style="color:#3fb950;">' + rev.long_count + '↑</span> &nbsp;'
+                            + '<span style="color:#7d8590;">' + rev.neutral_count + '•</span> &nbsp;'
+                            + '<span style="color:#ff7b72;">' + rev.short_count + '↓</span>'
+                            + '</div>'
+                            + '</div>';
+                    })() : ''}
+                </div>
+                <div style="margin-top:14px;">
+                    <div class="confluence-meter">${meterDots}</div>
+                </div>
+                ${data.confidence && data.confidence.warnings && data.confidence.warnings.length > 0 ? '<div class="confidence-warnings">' + data.confidence.warnings.map(w => '<div class="confidence-warning-item">' + w + '</div>').join('') + '</div>' : ''}
+            </div>
+
+            ${data.confidence && data.confidence.details ? buildConfidenceDetails(data.confidence.details) : ''}
+
+            <div id="ndx-net-premium-section"></div>
+
+            ${buildDualIndicatorPanel(data, indicatorRows)}
+        `;
+
+        document.getElementById('ndx-confluence-loading').style.display = 'none';
+        document.getElementById('ndx-confluence-content').style.display = 'block';
+        setStatus('NDX Confluence: ' + data.signal + ' (' + data.strength + '/10)');
+
+        // Load NDX net premium data asynchronously
+        loadNdxNetPremium();
+    } catch (err) {
+        document.getElementById('ndx-confluence-loading').style.display = 'none';
+        document.getElementById('ndx-confluence-error').style.display = 'block';
+        document.getElementById('ndx-confluence-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
+        setStatus('Error loading NDX confluence');
+    }
+}
+
+// ── NDX Net Premium ───────────────────────────────────────────────
+async function loadNdxNetPremium() {
+    const section = document.getElementById('ndx-net-premium-section');
+    if (!section) return;
+    section.innerHTML = '<div class="card" style="margin-top:24px;"><div class="card-title">NDX Net Premium Flow</div><div style="padding:16px; text-align:center; color:#7d8590;"><div class="spinner" style="margin:0 auto 8px;"></div>Loading NDX net premium data...</div></div>';
+
+    try {
+        const res = await fetch('/api/net-premium?index=NDX');
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        const table = data.table;
+        const signal = data.signal;
+
+        // Streak banner
+        const streakColor = table.streak_direction === 'positive' ? '#3fb950' : table.streak_direction === 'negative' ? '#ff7b72' : '#7d8590';
+        const streakText = table.streak > 0 ? table.streak + ' days of ' + table.streak_direction + ' net prems' : 'No clear streak';
+
+        // Signal badge
+        let signalBadge = '';
+        if (signal && signal.signal !== 0) {
+            const sigColor = signal.signal === 1 ? '#3fb950' : '#ff7b72';
+            signalBadge = '<span style="background:' + sigColor + '22; color:' + sigColor + '; padding:2px 8px; border-radius:4px; font-size:11px; margin-left:8px;">' + signal.label + '</span>';
+        }
+
+        // Build table rows
+        let rows = '';
+        table.history.forEach(function(h) {
+            const changeColor = h.change_pct >= 0 ? '#3fb950' : '#ff7b72';
+            const changeSign = h.change_pct >= 0 ? '+' : '';
+            const npColor = h.net_premium > 0 ? '#3fb950' : h.net_premium < 0 ? '#ff7b72' : '#7d8590';
+            const npFormatted = h.net_premium != null ? (h.net_premium > 0 ? '+' : '') + '$' + Math.abs(h.net_premium).toLocaleString() : '-';
+            const tpFormatted = h.total_premium != null ? '$' + h.total_premium.toLocaleString() : '-';
+            const sourceBadge = h.source === 'manual'
+                ? '<span style="background:#d29922; color:#0a0e17; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:700; margin-left:4px;">UW</span>'
+                : '<span style="background:#30363d; color:#7d8590; padding:1px 4px; border-radius:3px; font-size:9px; margin-left:4px;">AUTO</span>';
+
+            rows += '<div style="display:grid; grid-template-columns:80px 90px 90px 80px 150px 140px; gap:8px; padding:8px 16px; border-bottom:1px solid #21262d; font-size:12px; align-items:center;">'
+                + '<div style="color:#e6edf3;">' + h.date.substring(5) + '</div>'
+                + '<div style="color:#e6edf3;">' + (h.open != null ? '$' + h.open.toLocaleString() : '-') + '</div>'
+                + '<div style="color:#e6edf3;">' + (h.close != null ? '$' + h.close.toLocaleString() : '-') + '</div>'
+                + '<div style="color:' + changeColor + ';">' + (h.change_pct != null ? changeSign + h.change_pct + '%' : '-') + '</div>'
+                + '<div style="color:' + npColor + '; font-weight:600;">' + npFormatted + sourceBadge + '</div>'
+                + '<div style="color:#7d8590;">' + tpFormatted + '</div>'
+                + '</div>';
+        });
+
+        // Manual override form
+        const todayStr = new Date().toISOString().split('T')[0];
+        const overrideForm = '<div style="display:flex; gap:8px; align-items:center; padding:12px 16px; background:#0d1117; border-radius:0 0 10px 10px; border-top:1px solid #21262d;">'
+            + '<span style="font-size:11px; color:#7d8590;">Update from UW (NDX):</span>'
+            + '<input type="date" id="ndx-np-date" value="' + todayStr + '" style="background:#0d1117; border:1px solid #30363d; color:#e6edf3; padding:4px 8px; border-radius:4px; font-size:11px;">'
+            + '<input type="text" id="ndx-np-value" placeholder="Net Premium (e.g. 899201286)" style="background:#0d1117; border:1px solid #30363d; color:#e6edf3; padding:4px 8px; border-radius:4px; font-size:11px; width:180px;">'
+            + '<input type="text" id="ndx-np-total" placeholder="Total Premium (optional)" style="background:#0d1117; border:1px solid #30363d; color:#e6edf3; padding:4px 8px; border-radius:4px; font-size:11px; width:180px;">'
+            + '<button onclick="submitNdxNetPremium()" style="background:#d29922; color:#0a0e17; border:none; padding:4px 12px; border-radius:4px; font-size:11px; font-weight:700; cursor:pointer;">Save UW Data</button>'
+            + '</div>';
+
+        section.innerHTML = '<div class="card" style="margin-top:24px;">'
+            + '<div class="card-title" style="display:flex; align-items:center; justify-content:space-between;">'
+            + '<span>NDX Net Premium Flow</span>'
+            + '<span style="color:' + streakColor + '; font-size:13px; font-weight:600;">' + streakText + signalBadge + '</span>'
+            + '</div>'
+            + '<div style="padding:4px 0;">'
+            + '<div style="display:grid; grid-template-columns:80px 90px 90px 80px 150px 140px; gap:8px; padding:8px 16px; font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #30363d;">'
+            + '<div>Date</div><div>Open</div><div>Close</div><div>% Change</div><div>Net Prem</div><div>Total Prem</div>'
+            + '</div>'
+            + rows
+            + '</div>'
+            + overrideForm
+            + '</div>';
+    } catch (err) {
+        section.innerHTML = '<div class="card" style="margin-top:24px;"><div class="card-title">NDX Net Premium Flow</div><div style="padding:16px; color:#ff7b72; font-size:12px;">Error loading NDX net premium: ' + err.message + '</div></div>';
+    }
+}
+
+async function submitNdxNetPremium() {
+    const date = document.getElementById('ndx-np-date').value;
+    const value = document.getElementById('ndx-np-value').value.trim();
+    const total = document.getElementById('ndx-np-total').value.trim();
+
+    if (!value) { alert('Enter the NDX net premium value from Unusual Whales'); return; }
+
+    try {
+        const body = { date: date, net_premium: value, index: 'NDX' };
+        if (total) body.total_premium = total;
+
+        const res = await fetch('/api/net-premium/update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        // Refresh the NDX net premium table
+        loadNdxNetPremium();
+    } catch (err) {
+        alert('Error saving NDX net premium: ' + err.message);
+    }
+}
+
+// ── NDX Options (QQQ) ─────────────────────────────────────────────
+async function loadNdxOptions() {
+    switchNdxSubTab('options');
+    document.getElementById('ndx-options-loading').style.display = 'block';
+    document.getElementById('ndx-options-loading').innerHTML = '<div class="spinner"></div><div>Loading QQQ/NDX options analysis...</div>';
+    document.getElementById('ndx-options-content').style.display = 'none';
+    document.getElementById('ndx-options-error').style.display = 'none';
+    setStatus('Fetching NDX/QQQ options data...');
+
+    try {
+        // Fetch options data and live price in parallel
+        const [res, liveRes] = await Promise.all([fetch('/api/options?index=NDX'), fetch('/api/live?symbol=^NDX')]);
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error);
+
+        // Always overlay with fresh live price
+        try {
+            const ld = await liveRes.json();
+            if (ld.success) {
+                const chgFromOpen = ld.price - ld.open;
+                d.live = {
+                    current: ld.price,
+                    open: ld.open,
+                    prev_close: ld.prev_close,
+                    high: ld.high,
+                    low: ld.low,
+                    change_from_close: ld.change,
+                    change_from_close_pct: ld.change_pct,
+                    change_from_open: parseFloat(chgFromOpen.toFixed(2)),
+                    change_from_open_pct: ld.open > 0 ? parseFloat((chgFromOpen / ld.open * 100).toFixed(2)) : 0,
+                    day_range_pct: ld.day_range_pct,
+                    source: 'live'
+                };
+            }
+        } catch(e) { /* keep d.live from backend if live fails */ }
+
+        const ivColor = d.iv_rank > 70 ? '#ff7b72' : d.iv_rank > 40 ? '#d29922' : '#3fb950';
+        const ivBg = d.iv_rank > 70 ? '#4a1111' : d.iv_rank > 40 ? '#2a2000' : '#0d4429';
+
+        // Build Greeks table
+        function greeksRow(label, g) {
+            return '<tr>'
+                + '<td style="color:#e6edf3; font-weight:600;">' + label + '</td>'
+                + '<td>' + g.call.delta + '</td>'
+                + '<td>' + g.call.gamma + '</td>'
+                + '<td>' + g.call.theta + '</td>'
+                + '<td>' + g.call.vega + '</td>'
+                + '<td style="border-left:1px solid #21262d;">' + g.put.delta + '</td>'
+                + '<td>' + g.put.gamma + '</td>'
+                + '<td>' + g.put.theta + '</td>'
+                + '<td>' + g.put.vega + '</td>'
+                + '</tr>';
+        }
+
+        // Build strategies
+        let stratHtml = '';
+        d.strategies.forEach(function(s) {
+            const biasColor = s.bias === 'BULLISH' ? '#3fb950' : s.bias === 'BEARISH' ? '#ff7b72' :
+                             s.bias === 'VOLATILITY' ? '#a371f7' : '#d29922';
+            stratHtml += '<div style="padding:12px 16px; border-bottom:1px solid #1c1e23;">'
+                + '<div style="display:flex; justify-content:space-between; align-items:center;">'
+                + '<div>'
+                + '<span style="font-weight:600; color:#e6edf3;">' + s.name + '</span>'
+                + ' <span class="tag" style="background:' + biasColor + '22; color:' + biasColor + '; font-size:9px; padding:2px 6px; border-radius:3px;">' + s.bias + '</span>'
+                + '</div>'
+                + '</div>'
+                + '<div style="font-size:11px; color:#7d8590; margin-top:4px;">' + s.reason + '</div>'
+                + '<div style="font-size:10px; color:#484f58; margin-top:2px;">' + s.risk + '</div>'
+                + '</div>';
+        });
+
+        // Put/Call data
+        let pcHtml = '';
+        if (d.pc_volume_ratio !== null) {
+            const pcColor = d.pc_volume_ratio > 1 ? '#ff7b72' : d.pc_volume_ratio < 0.7 ? '#3fb950' : '#d29922';
+            const pcLabel = d.pc_volume_ratio > 1 ? 'BEARISH' : d.pc_volume_ratio < 0.7 ? 'BULLISH' : 'NEUTRAL';
+            pcHtml = '<div class="metric"><span class="metric-label">P/C Volume Ratio</span>'
+                + '<span class="metric-value" style="color:' + pcColor + ';">' + d.pc_volume_ratio + ' (' + pcLabel + ')</span></div>';
+        }
+        if (d.pc_oi_ratio !== null) {
+            pcHtml += '<div class="metric"><span class="metric-label">P/C Open Interest</span>'
+                + '<span class="metric-value">' + d.pc_oi_ratio + '</span></div>';
+        }
+
+        // Skew
+        let skewHtml = '<div style="color:#484f58; font-size:11px;">Skew data unavailable</div>';
+        if (d.skew) {
+            skewHtml = '<div class="metric"><span class="metric-label">ATM Call IV</span><span class="metric-value">' + d.skew.call_iv + '%</span></div>'
+                + '<div class="metric"><span class="metric-label">ATM Put IV</span><span class="metric-value">' + d.skew.put_iv + '%</span></div>'
+                + '<div class="metric"><span class="metric-label">Skew (Put-Call)</span><span class="metric-value">' + d.skew.skew + '%</span></div>'
+                + '<div class="metric"><span class="metric-label">Skew Ratio</span><span class="metric-value">' + d.skew.skew_ratio + '</span></div>'
+                + '<div style="font-size:10px; color:#484f58;">ATM Strike: ' + d.skew.atm_strike + ' | Exp: ' + d.skew.expiration + '</div>';
+        }
+
+        const lv = d.levels;
+        const ss = d.suggested_strikes;
+
+        // Build live session panel
+        let optLiveHtml = '';
+        if (d.live) {
+            const olv = d.live;
+            const oCloseColor = olv.change_from_close >= 0 ? '#3fb950' : '#ff7b72';
+            const oCloseSign = olv.change_from_close >= 0 ? '+' : '';
+            const oOpenColor = olv.change_from_open >= 0 ? '#3fb950' : '#ff7b72';
+            const oOpenSign = olv.change_from_open >= 0 ? '+' : '';
+            const oRangeWidth = Math.max(0, Math.min(100, olv.day_range_pct));
+
+            optLiveHtml = '<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; margin-top:16px; padding:16px; background:#0d1117; border-radius:10px; border:1px solid #21262d;">'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:0.5px;">Live Price</div>'
+                + '<div style="font-size:22px; font-weight:700; color:#e6edf3;">' + olv.current.toLocaleString() + '</div>'
+                + '<div style="font-size:11px; color:' + oCloseColor + ';">' + oCloseSign + olv.change_from_close + ' (' + oCloseSign + olv.change_from_close_pct + '%)</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Prev Close</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#e6edf3;">' + olv.prev_close.toLocaleString() + '</div>'
+                + '<div style="font-size:10px; color:#484f58;">indicators based on this</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#7d8590; text-transform:uppercase;">Today Open</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#e6edf3;">' + olv.open.toLocaleString() + '</div>'
+                + '<div style="font-size:11px; color:' + oOpenColor + ';">' + oOpenSign + olv.change_from_open_pct + '% from open</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">Session Low</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#ff7b72;">' + olv.low.toLocaleString() + '</div>'
+                + '</div>'
+                + '<div style="text-align:center;">'
+                + '<div style="font-size:10px; color:#3fb950; text-transform:uppercase;">Session High</div>'
+                + '<div style="font-size:16px; font-weight:600; color:#3fb950;">' + olv.high.toLocaleString() + '</div>'
+                + '</div>'
+                + '</div>'
+                + '<div style="margin:8px 16px 0; padding:0 16px;">'
+                + '<div style="height:6px; background:#21262d; border-radius:3px; position:relative; overflow:visible;">'
+                + '<div style="height:100%; width:100%; border-radius:3px; background:linear-gradient(90deg, #f47067, #d29922, #3fb950);"></div>'
+                + '<div style="position:absolute; top:-3px; left:' + oRangeWidth + '%; width:12px; height:12px; background:#e6edf3; border-radius:50%; border:2px solid #0a0e17; transform:translateX(-50%);"></div>'
+                + '</div>'
+                + '<div style="display:flex; justify-content:space-between; font-size:9px; color:#484f58; margin-top:4px;">'
+                + '<span>Low ' + olv.low.toLocaleString() + '</span>'
+                + '<span>Day Range Position: ' + olv.day_range_pct + '%</span>'
+                + '<span>High ' + olv.high.toLocaleString() + '</span>'
+                + '</div>'
+                + '</div>';
+        }
+
+        document.getElementById('ndx-options-content').innerHTML = `
+            <div class="signal-card" style="text-align:center;">
+                <div class="signal-date">NDX/QQQ Options Dashboard — 0DTE to 30DTE <span class="ndx-badge" style="vertical-align:middle;">NDX</span></div>
+                <div style="font-size:11px; color:#484f58; margin-bottom:8px;">Updated ${d.timestamp} | Source: ${d.data_source}</div>
+                <div class="signal-close"><span>NDX</span> ${d.live ? d.live.current.toLocaleString() : d.spot.toLocaleString()}</div>
+                ${optLiveHtml}
+
+                <div style="display:inline-block; margin:16px auto; padding:12px 28px; border-radius:12px; background:${ivBg}; border:2px solid ${ivColor};">
+                    <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px;">IV Rank</div>
+                    <div style="font-size:36px; font-weight:800; color:${ivColor};">${d.iv_rank}</div>
+                    <div style="font-size:12px; color:${ivColor}; font-weight:600;">${d.iv_label}</div>
+                </div>
+                <div style="font-size:12px; color:#7d8590; max-width:500px; margin:0 auto;">${d.iv_strategy}</div>
+            </div>
+
+            <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; margin-top:24px;">
+                <div class="card" style="text-align:center; padding:20px;">
+                    <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Expected Move — 0DTE</div>
+                    <div style="font-size:22px; font-weight:700; color:#e6edf3;">±${d.expected_move_1d.toFixed(0)} pts</div>
+                    <div style="font-size:11px; color:#484f58;">${d.em_1d_range[0].toLocaleString()} — ${d.em_1d_range[1].toLocaleString()}</div>
+                    <div style="font-size:11px; color:#d29922;">±${d.em_1d_pct}%</div>
+                </div>
+                <div class="card" style="text-align:center; padding:20px;">
+                    <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Expected Move — Weekly</div>
+                    <div style="font-size:22px; font-weight:700; color:#e6edf3;">±${d.expected_move_5d.toFixed(0)} pts</div>
+                    <div style="font-size:11px; color:#484f58;">${d.em_5d_range[0].toLocaleString()} — ${d.em_5d_range[1].toLocaleString()}</div>
+                    <div style="font-size:11px; color:#d29922;">±${d.em_5d_pct}%</div>
+                </div>
+                <div class="card" style="text-align:center; padding:20px;">
+                    <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Expected Move — Monthly</div>
+                    <div style="font-size:22px; font-weight:700; color:#e6edf3;">±${d.expected_move_30d.toFixed(0)} pts</div>
+                    <div style="font-size:11px; color:#484f58;">${d.em_30d_range[0].toLocaleString()} — ${d.em_30d_range[1].toLocaleString()}</div>
+                    <div style="font-size:11px; color:#d29922;">±${d.em_30d_pct}%</div>
+                </div>
+            </div>
+
+            <div class="grid" style="margin-top:16px;">
+                <div class="card">
+                    <div class="card-title">Implied Volatility</div>
+                    <div class="metric"><span class="metric-label">IV Rank</span><span class="metric-value" style="color:${ivColor};">${d.iv_rank}%</span></div>
+                    <div class="metric"><span class="metric-label">IV Percentile</span><span class="metric-value">${d.iv_percentile}%</span></div>
+                    <div class="metric"><span class="metric-label">HV (20-day)</span><span class="metric-value">${d.hv_20}%</span></div>
+                    <div class="metric"><span class="metric-label">HV (5-day)</span><span class="metric-value">${d.hv_5}%</span></div>
+                    <div class="metric"><span class="metric-label">HV Median</span><span class="metric-value">${d.hv_median}%</span></div>
+                    ${pcHtml}
+                </div>
+                <div class="card">
+                    <div class="card-title">Put/Call Skew</div>
+                    ${skewHtml}
+                </div>
+                <div class="card">
+                    <div class="card-title">Technicals</div>
+                    <div class="gauge-row">
+                        <span class="gauge-label">RSI(14)</span>
+                        <div class="gauge-track">
+                            <div class="gauge-fill" style="width:${d.technicals.rsi}%; background:${gaugeColor(d.technicals.rsi, true)}"></div>
+                        </div>
+                        <span class="gauge-value ${rsiColor(d.technicals.rsi)}">${d.technicals.rsi}</span>
+                    </div>
+                    <div class="metric"><span class="metric-label">ATR (14-day)</span><span class="metric-value">${d.technicals.atr_14} (${d.technicals.atr_pct}%)</span></div>
+                    <div class="metric"><span class="metric-label">ATR (5-day)</span><span class="metric-value">${d.technicals.atr_5}</span></div>
+                    <div class="metric"><span class="metric-label">Day Range</span><span class="metric-value">${d.technicals.day_range} pts</span></div>
+                    <div class="metric"><span class="metric-label">Body/Range Ratio</span><span class="metric-value">${d.technicals.body_ratio}%</span></div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">Suggested Strikes</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; text-align:center; padding:12px;">
+                    <div>
+                        <div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">OTM Put (Weekly)</div>
+                        <div style="font-size:18px; font-weight:700; color:#e6edf3;">${ss.otm_put_2}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">OTM Put (0DTE)</div>
+                        <div style="font-size:18px; font-weight:700; color:#e6edf3;">${ss.otm_put_1}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#d29922; text-transform:uppercase;">ATM Strike</div>
+                        <div style="font-size:18px; font-weight:700; color:#d29922;">${ss.atm}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#3fb950; text-transform:uppercase;">OTM Call (0DTE)</div>
+                        <div style="font-size:18px; font-weight:700; color:#e6edf3;">${ss.otm_call_1}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#3fb950; text-transform:uppercase;">OTM Call (Weekly)</div>
+                        <div style="font-size:18px; font-weight:700; color:#e6edf3;">${ss.otm_call_2}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">Key Levels (Pivot Points)</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:12px; text-align:center; padding:12px;">
+                    <div>
+                        <div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">S2</div>
+                        <div style="font-size:16px; font-weight:600; color:#ff7b72;">${lv.s2.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#ff7b72; text-transform:uppercase;">S1</div>
+                        <div style="font-size:16px; font-weight:600; color:#ff7b72;">${lv.s1.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#d29922; text-transform:uppercase;">Pivot</div>
+                        <div style="font-size:16px; font-weight:600; color:#d29922;">${lv.pivot.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#3fb950; text-transform:uppercase;">R1</div>
+                        <div style="font-size:16px; font-weight:600; color:#3fb950;">${lv.r1.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#3fb950; text-transform:uppercase;">R2</div>
+                        <div style="font-size:16px; font-weight:600; color:#3fb950;">${lv.r2.toLocaleString()}</div>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:12px; text-align:center; padding:12px; margin-top:8px; border-top:1px solid #21262d;">
+                    <div>
+                        <div style="font-size:10px; color:#7d8590;">20D Low</div>
+                        <div style="font-size:14px; color:#ff7b72;">${lv.low_20d.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#7d8590;">5D Low</div>
+                        <div style="font-size:14px; color:#e6edf3;">${lv.low_5d.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#7d8590;">5D High</div>
+                        <div style="font-size:14px; color:#e6edf3;">${lv.high_5d.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:10px; color:#7d8590;">20D High</div>
+                        <div style="font-size:14px; color:#3fb950;">${lv.high_20d.toLocaleString()}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">ATM Greeks Snapshot (Strike ${ss.atm})</div>
+                <table style="width:100%; font-size:12px; color:#c9d1d9;">
+                    <thead>
+                        <tr style="color:#7d8590; font-size:10px; text-transform:uppercase;">
+                            <th style="padding:8px; text-align:left;">DTE</th>
+                            <th style="padding:8px;">Call Δ</th><th style="padding:8px;">Call Γ</th>
+                            <th style="padding:8px;">Call Θ</th><th style="padding:8px;">Call V</th>
+                            <th style="padding:8px; border-left:1px solid #21262d;">Put Δ</th><th style="padding:8px;">Put Γ</th>
+                            <th style="padding:8px;">Put Θ</th><th style="padding:8px;">Put V</th>
+                        </tr>
+                    </thead>
+                    <tbody style="text-align:center;">
+                        ${greeksRow('0DTE', d.greeks_0dte)}
+                        ${greeksRow('Weekly (5)', d.greeks_weekly)}
+                        ${greeksRow('Monthly (21)', d.greeks_monthly)}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">Suggested Strategies</div>
+                ${stratHtml}
+            </div>
+        `;
+
+        document.getElementById('ndx-options-loading').style.display = 'none';
+        document.getElementById('ndx-options-content').style.display = 'block';
+        setStatus('NDX Options: IV Rank ' + d.iv_rank + ' (' + d.iv_label + ')');
+    } catch (err) {
+        document.getElementById('ndx-options-loading').style.display = 'none';
+        document.getElementById('ndx-options-error').style.display = 'block';
+        document.getElementById('ndx-options-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
+        setStatus('Error loading NDX options');
+    }
+}
+
+// ── NDX ML Prediction ─────────────────────────────────────────────
+async function loadNdxPrediction() {
+    switchNdxSubTab('ml');
+    document.getElementById('ndx-ml-loading').style.display = 'block';
+    document.getElementById('ndx-ml-loading').innerHTML = '<div class="spinner"></div><div>Loading NDX prediction...</div>';
+    document.getElementById('ndx-ml-content').style.display = 'none';
+    document.getElementById('ndx-ml-error').style.display = 'none';
+    setStatus('Fetching NDX prediction...');
+
+    try {
+        const res = await fetch('/api/predict?index=NDX');
+        const data = await res.json();
+
+        if (!data.success) throw new Error(data.error);
+
+        const c = data.context;
+        const l = data.levels;
+
+        const t = data.trend_5d || {};
+        document.getElementById('ndx-ml-content').innerHTML = `
+            <div class="signal-card">
+                <div class="signal-date">${data.prediction_for || data.today} <span class="ndx-badge" style="vertical-align:middle;">NDX</span></div>
+                <div style="font-size:11px; color:#484f58; margin-bottom:4px;">Based on ${data.data_date} close: <strong>${data.close.toLocaleString()}</strong></div>
+                ${data.live_price ? `<div style="font-size:13px; margin-bottom:12px;">
+                    <span style="color:#8b949e;">Live NDX:</span>
+                    <strong style="color:${data.live_change >= 0 ? '#3fb950' : '#f85149'}">${data.live_price.toLocaleString()}</strong>
+                    <span style="color:${data.live_change >= 0 ? '#3fb950' : '#f85149'}; font-size:11px;">${data.live_change >= 0 ? '+' : ''}${data.live_change} (${data.live_change >= 0 ? '+' : ''}${data.live_change_pct}%)</span>
+                </div>` : `<div style="font-size:11px; color:#484f58; margin-bottom:12px;">Market closed</div>`}
+                <div class="signal-close"><span>Prev Close</span> ${data.close.toLocaleString()}</div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
+
+                    <div style="background:#0d1117; border:1px solid #30363d; border-radius:8px; padding:16px; text-align:center;">
+                        <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">Tomorrow (Next Candle)</div>
+                        <div class="signal-badge ${data.signal_class}" style="margin:0 auto 12px;">${data.signal}</div>
+                        <div class="prob-container" style="margin:0;">
+                            <div class="prob-label bear">BEAR</div>
+                            <div>
+                                <div class="prob-bar-track">
+                                    <div class="prob-bar-fill bull-fill" style="width:${data.bull_prob}%"></div>
+                                </div>
+                                <div class="prob-values" style="margin:6px auto 0; display:flex; justify-content:space-between;">
+                                    <span>${data.bear_prob}%</span>
+                                    <span>${data.bull_prob}%</span>
+                                </div>
+                            </div>
+                            <div class="prob-label bull">BULL</div>
+                        </div>
+                        <div style="font-size:11px; color:#484f58; margin-top:10px;">Will tomorrow's candle close above open?</div>
+                    </div>
+
+                    <div style="background:#0d1117; border:1px solid #30363d; border-radius:8px; padding:16px; text-align:center;">
+                        <div style="font-size:10px; color:#7d8590; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">5-Day Trend (Swing)</div>
+                        <div class="signal-badge ${t.signal_class || 'neutral'}" style="margin:0 auto 12px;">${t.signal || 'N/A'}</div>
+                        <div class="prob-container" style="margin:0;">
+                            <div class="prob-label bear">BEAR</div>
+                            <div>
+                                <div class="prob-bar-track">
+                                    <div class="prob-bar-fill bull-fill" style="width:${t.bull_prob || 50}%"></div>
+                                </div>
+                                <div class="prob-values" style="margin:6px auto 0; display:flex; justify-content:space-between;">
+                                    <span>${t.bear_prob || '—'}%</span>
+                                    <span>${t.bull_prob || '—'}%</span>
+                                </div>
+                            </div>
+                            <div class="prob-label bull">BULL</div>
+                        </div>
+                        <div style="font-size:11px; color:#484f58; margin-top:10px; margin-bottom:8px;">Hybrid: ML + 8-factor trend score</div>
+                        ${t.trend_score !== undefined ? `
+                        <div style="display:flex; justify-content:center; align-items:center; gap:8px; margin-bottom:8px;">
+                            <span style="font-size:11px; color:#7d8590;">Trend Score:</span>
+                            <span style="font-size:15px; font-weight:700; color:${t.trend_score >= 6 ? '#3fb950' : t.trend_score >= 4 ? '#d29922' : '#f47067'};">${t.trend_score}/8</span>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:4px; justify-content:center;">
+                            ${t.trend_details ? Object.entries(t.trend_details).map(([k,v]) => `
+                                <span style="font-size:9px; padding:2px 6px; border-radius:3px; background:${v ? '#0f2419' : '#2d0f0f'}; color:${v ? '#3fb950' : '#f47067'}; border:1px solid ${v ? '#238636' : '#da3633'};">
+                                    ${k.replace(/_/g,' ')}
+                                </span>`).join('') : ''}
+                        </div>
+                        <div style="font-size:10px; color:#484f58; margin-top:6px;">ML: ${t.ml_prob}% bull &nbsp;|&nbsp; ADX: ${t.adx} &nbsp;|&nbsp; 20d: ${t.ret_20d > 0 ? '+' : ''}${t.ret_20d}%</div>
+                        ` : ''}
+                    </div>
+
+                </div>
+
+                <div style="margin-top:12px; padding:10px 14px; background:#161b22; border-radius:6px; border-left:3px solid ${
+                    data.signal_class === t.signal_class ? '#3fb950' : '#d29922'
+                };">
+                    <span style="font-size:11px; color:#7d8590;">Signal alignment: </span>
+                    <strong style="font-size:12px; color:${data.signal_class === t.signal_class ? '#3fb950' : '#d29922'};">
+                        ${data.signal_class === t.signal_class
+                            ? '✓ Both signals agree — higher conviction'
+                            : '⚠ Signals diverge — daily pullback likely within larger trend'}
+                    </strong>
+                </div>
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">Trend</div>
+                    <div class="metric">
+                        <span class="metric-label">Price vs SMA(20)</span>
+                        <span class="metric-value ${c.sma20.dir === 'ABOVE' ? 'green' : 'red'}">${c.sma20.dir} (${c.sma20.dist})</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Price vs SMA(200)</span>
+                        <span class="metric-value ${c.sma200.dir === 'ABOVE' ? 'green' : 'red'}">${c.sma200.dir} (${c.sma200.dist})</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Golden Cross (50/200)</span>
+                        <span class="metric-value ${c.golden_cross === 'YES' ? 'green' : 'red'}">${c.golden_cross}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">ADX</span>
+                        <span class="metric-value">${c.adx}</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Momentum</div>
+                    <div class="gauge-row">
+                        <span class="gauge-label">RSI(14)</span>
+                        <div class="gauge-track">
+                            <div class="gauge-fill" style="width:${c.rsi}%; background:${gaugeColor(c.rsi, true)}"></div>
+                        </div>
+                        <span class="gauge-value ${rsiColor(c.rsi)}">${c.rsi}</span>
+                    </div>
+                    <div class="gauge-row">
+                        <span class="gauge-label">Stochastic %K</span>
+                        <div class="gauge-track">
+                            <div class="gauge-fill" style="width:${c.stoch_k}%; background:${gaugeColor(c.stoch_k, true)}"></div>
+                        </div>
+                        <span class="gauge-value">${c.stoch_k}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">MACD Histogram</span>
+                        <span class="metric-value ${c.macd_hist > 0 ? 'green' : 'red'}">${c.macd_hist} (${c.macd_dir})</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Williams %R</span>
+                        <span class="metric-value">${c.williams_r}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">CCI</span>
+                        <span class="metric-value">${c.cci}</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Volatility</div>
+                    <div class="metric">
+                        <span class="metric-label">Bollinger Band</span>
+                        <span class="metric-value">${c.bb_pct} (${c.bb_label})</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">ATR (%)</span>
+                        <span class="metric-value">${c.atr_pct}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Historical Vol (20d)</span>
+                        <span class="metric-value">${c.hvol_20}</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Recent Action</div>
+                    <div class="metric">
+                        <span class="metric-label">1-Day Return</span>
+                        <span class="metric-value ${parseFloat(c.ret_1d) >= 0 ? 'green' : 'red'}">${c.ret_1d}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">5-Day Return</span>
+                        <span class="metric-value ${parseFloat(c.ret_5d) >= 0 ? 'green' : 'red'}">${c.ret_5d}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Last Gap</span>
+                        <span class="metric-value">${c.gap}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Streak</span>
+                        <span class="metric-value">${c.streak}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Volume vs 20d Avg</span>
+                        <span class="metric-value">${c.vol_ratio}x (${c.vol_label})</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Key Levels</div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; text-align:center;">
+                    <div>
+                        <div style="color:#7d8590; font-size:11px; margin-bottom:4px;">20-Day High</div>
+                        <div style="color:#3fb950; font-size:18px; font-weight:600;">${l.high_20.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="color:#7d8590; font-size:11px; margin-bottom:4px;">Prior Day High</div>
+                        <div style="color:#e6edf3; font-size:18px; font-weight:600;">${l.prev_high.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="color:#7d8590; font-size:11px; margin-bottom:4px;">Prior Day Low</div>
+                        <div style="color:#e6edf3; font-size:18px; font-weight:600;">${l.prev_low.toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div style="color:#7d8590; font-size:11px; margin-bottom:4px;">20-Day Low</div>
+                        <div style="color:#f47067; font-size:18px; font-weight:600;">${l.low_20.toLocaleString()}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('ndx-ml-loading').style.display = 'none';
+        document.getElementById('ndx-ml-content').style.display = 'block';
+        setStatus('NDX Prediction loaded');
+    } catch (err) {
+        document.getElementById('ndx-ml-loading').style.display = 'none';
+        document.getElementById('ndx-ml-error').style.display = 'block';
+        document.getElementById('ndx-ml-error').innerHTML = `<div class="error-msg">Error: ${err.message}</div>`;
+        setStatus('Error loading NDX prediction');
+    }
+}
+
+// ── NDX GEX (QQQ) ─────────────────────────────────────────────────
+let ndxGexChartInstance = null;
+
+async function loadNdxGex() {
+    switchNdxSubTab('gex');
+    document.getElementById('ndx-gex-loading').style.display = 'block';
+    document.getElementById('ndx-gex-loading').innerHTML = '<div class="spinner"></div><div>Fetching QQQ options data & calculating NDX GEX...</div>';
+    document.getElementById('ndx-gex-content').style.display = 'none';
+    document.getElementById('ndx-gex-error').style.display = 'none';
+    setStatus('Calculating NDX gamma exposure...');
+
+    try {
+        const res = await fetch('/api/gex?index=NDX');
+        const data = await res.json();
+
+        if (!data.success) throw new Error(data.error);
+
+        const dealerClass = data.dealer_position === 'LONG GAMMA' ? 'long-gamma' : 'short-gamma';
+
+        // Build bar chart
+        const maxGex = Math.max(...data.chart_net_gex.map(v => Math.abs(v)), 1);
+        let barsHtml = '';
+        let labelsHtml = '';
+        const spotIdx = data.chart_strikes.findIndex(s => s >= data.spot);
+
+        // Calculate label interval
+        const totalStrikes = data.chart_strikes.length;
+        const labelInterval = Math.max(1, Math.round(totalStrikes / 10));
+
+        data.chart_net_gex.forEach((gex, i) => {
+            const pct = Math.abs(gex) / maxGex * 100;
+            const isPos = gex >= 0;
+            const isSpot = i === spotIdx;
+            const strike = data.chart_strikes[i];
+            const showGridline = i % labelInterval === 0 && i !== 0;
+            const gexFormatted = formatGexNum(gex);
+            const valClass = isPos ? 'tt-pos' : 'tt-neg';
+
+            barsHtml += `
+                <div class="gex-bar-group${showGridline ? ' has-gridline' : ''}" >
+                    <div class="gex-tooltip">
+                        <span class="tt-strike">${strike.toLocaleString()}</span><br>
+                        Net GEX: <span class="tt-value ${valClass}">${gexFormatted}</span>
+                    </div>
+                    ${isSpot ? '<div class="gex-spot-marker"></div>' : ''}
+                    <div class="gex-bar ${isPos ? 'positive' : 'negative'}" style="height:${pct}%"></div>
+                </div>`;
+
+            const showLabel = i % labelInterval === 0;
+            labelsHtml += `<div class="gex-bar-label">${showLabel ? strike.toLocaleString() : ''}</div>`;
+        });
+
+        // Top gamma strikes tables
+        let callRows = data.top_call_gamma.map(s =>
+            `<tr><td>${s.strike.toLocaleString()}</td><td class="green">${formatGexNum(s.gex)}</td></tr>`
+        ).join('');
+        let putRows = data.top_put_gamma.map(s =>
+            `<tr><td>${s.strike.toLocaleString()}</td><td class="red">${formatGexNum(s.gex)}</td></tr>`
+        ).join('');
+
+        // Per-expiry rows
+        let expiryRows = '';
+        data.per_expiry.forEach(function(e) {
+            const rowStyle = e.is_monthly ? 'background:#1a1520;' : '';
+            const dealerColor = e.dealer_position === 'LONG GAMMA' ? 'green' : 'red';
+            const typeTag = e.is_monthly ? '<span class="tag neutral">OPEX</span>' : 'Weekly';
+            const netColor = e.net_gex >= 0 ? 'green' : 'red';
+            const topStrike = e.top_strike ? e.top_strike.toLocaleString() : '-';
+            expiryRows += '<tr style="' + rowStyle + '">'
+                + '<td>' + e.date + '</td>'
+                + '<td>' + e.dte + '</td>'
+                + '<td>' + typeTag + '</td>'
+                + '<td class="green">' + formatGexNum(e.call_gex) + '</td>'
+                + '<td class="red">' + formatGexNum(e.put_gex) + '</td>'
+                + '<td class="' + netColor + '">' + formatGexNum(e.net_gex) + '</td>'
+                + '<td class="' + dealerColor + '">' + e.dealer_position + '</td>'
+                + '<td>' + topStrike + '</td>'
+                + '</tr>';
+        });
+
+        document.getElementById('ndx-gex-content').innerHTML = `
+            <div class="signal-card">
+                <div class="signal-date">NDX/QQQ Gamma Exposure Analysis <span class="ndx-badge" style="vertical-align:middle;">NDX</span></div>
+                <div style="font-size:11px; color:#484f58; margin-bottom:16px;">${data.timestamp} | Source: ${data.data_source} | ${data.expirations_used} expirations</div>
+                <div class="signal-close"><span>NDX</span> ${data.spot.toLocaleString()}</div>
+                <div class="gex-dealer-badge ${dealerClass}">${data.dealer_position}</div>
+                <div class="gex-implication">${data.dealer_implication}</div>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px; margin-bottom:24px;">
+                <div class="card" style="text-align:center;">
+                    <div class="gex-level-label">GEX FLIP LEVEL</div>
+                    <div class="gex-level-value" style="color:#d29922;">${data.gex_flip ? data.gex_flip.toLocaleString() : 'N/A'}</div>
+                    <div class="gex-level-label">Price where dealers switch positioning</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div class="gex-level-label">GAMMA SUPPORT</div>
+                    <div class="gex-level-value" style="color:#3fb950;">${data.gamma_support ? data.gamma_support.toLocaleString() : 'N/A'}</div>
+                    <div class="gex-level-label">Highest gamma strike below spot</div>
+                </div>
+                <div class="card" style="text-align:center;">
+                    <div class="gex-level-label">GAMMA RESISTANCE</div>
+                    <div class="gex-level-value" style="color:#f47067;">${data.gamma_resistance ? data.gamma_resistance.toLocaleString() : 'N/A'}</div>
+                    <div class="gex-level-label">Highest gamma strike above spot</div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-bottom:24px;">
+                <div class="card-title">Net GEX by Strike <span style="color:#d29922; font-weight:400;">(yellow line = spot)</span></div>
+                <div class="gex-bar-chart">${barsHtml}</div>
+                <div class="gex-bar-labels">${labelsHtml}</div>
+            </div>
+
+            <div class="card" style="margin-bottom:24px;">
+                <div class="card-title">GEX by Expiration Date</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Expiration</th>
+                            <th>DTE</th>
+                            <th>Type</th>
+                            <th>Call GEX</th>
+                            <th>Put GEX</th>
+                            <th>Net GEX</th>
+                            <th>Dealer</th>
+                            <th>Top Strike</th>
+                        </tr>
+                    </thead>
+                    <tbody>${expiryRows}</tbody>
+                </table>
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="card-title">Top Call Gamma Strikes (Resistance)</div>
+                    <table>
+                        <thead><tr><th>Strike</th><th>GEX</th></tr></thead>
+                        <tbody>${callRows}</tbody>
+                    </table>
+                </div>
+                <div class="card">
+                    <div class="card-title">Top Put Gamma Strikes (Support)</div>
+                    <table>
+                        <thead><tr><th>Strike</th><th>GEX</th></tr></thead>
+                        <tbody>${putRows}</tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="card-title">How to Read GEX</div>
+                <div class="metric"><span class="metric-label">Total Net GEX</span><span class="metric-value">${formatGexNum(data.total_gex)}</span></div>
+                <div style="font-size:12px; color:#7d8590; margin-top:12px; line-height:1.8;">
+                    <strong style="color:#3fb950;">Dealers LONG gamma (positive GEX):</strong> They sell into rallies and buy dips. Market tends to be pinned, lower volatility, mean-reverting.<br>
+                    <strong style="color:#f47067;">Dealers SHORT gamma (negative GEX):</strong> They buy rallies and sell dips (amplifying moves). Market trends harder, higher volatility, breakout-prone.<br>
+                    <strong style="color:#d29922;">GEX Flip Level:</strong> The strike where dealer positioning flips. Above it = long gamma environment. Below it = short gamma. Acts as a magnet.<br>
+                    <strong>Gamma Support/Resistance:</strong> Strikes with highest absolute gamma act as magnets and walls. Price tends to gravitate toward high-gamma strikes.
+                </div>
+            </div>
+
+            <div class="gex-source">
+                Data is delayed ~15-20 min via Yahoo Finance. This is an estimate, not institutional-grade GEX. QQQ options used as NDX proxy.
+            </div>
+        `;
+
+        document.getElementById('ndx-gex-loading').style.display = 'none';
+        document.getElementById('ndx-gex-content').style.display = 'block';
+        setStatus(`NDX GEX loaded - Dealers ${data.dealer_position}`);
+    } catch (err) {
+        document.getElementById('ndx-gex-loading').style.display = 'none';
+        document.getElementById('ndx-gex-error').style.display = 'block';
+        document.getElementById('ndx-gex-error').innerHTML = `<div class="error-msg">Error: ${err.message}<br><br>This may happen outside market hours if options data is unavailable.</div>`;
+        setStatus('Error loading NDX GEX');
+    }
+}
+
+// ── NDX Backtest ──────────────────────────────────────────────────
+async function loadNdxBacktest() {
+    switchNdxSubTab('backtest');
+    document.getElementById('ndx-backtest-loading').style.display = 'block';
+    document.getElementById('ndx-backtest-loading').innerHTML = '<div class="spinner"></div><div>Loading NDX backtest...</div>';
+    document.getElementById('ndx-backtest-content').style.display = 'none';
+    document.getElementById('ndx-backtest-error').style.display = 'none';
+    setStatus('Loading NDX backtest...');
+
+    try {
+        const res = await fetch('/api/backtest?index=NDX');
+        const data = await res.json();
+
+        if (!data.success) throw new Error(data.error);
+
+        let tableRows = data.rows.map(r => `
+            <tr>
+                <td>${r.date}</td>
+                <td>${r.close.toLocaleString()}</td>
+                <td>${r.prob}%</td>
+                <td><span class="tag ${r.signal_class}">${r.signal}</span></td>
+                <td>${r.actual}</td>
+                <td class="${r.hit ? 'hit' : 'miss'}">${r.hit ? 'HIT' : 'MISS'}</td>
+            </tr>
+        `).join('');
+
+        document.getElementById('ndx-backtest-content').innerHTML = `
+            <div class="backtest-card">
+                <div class="backtest-header">
+                    <div class="card-title" style="margin:0; border:none; padding:0;">NDX — Last 30 Trading Days <span class="ndx-badge" style="vertical-align:middle;">NDX</span></div>
+                    <div class="backtest-accuracy">
+                        Accuracy: <strong>${data.correct}/${data.total} (${data.accuracy}%)</strong>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Close</th>
+                            <th>Bull %</th>
+                            <th>Signal</th>
+                            <th>Actual</th>
+                            <th>Result</th>
+                        </tr>
+                    </thead>
+                    <tbody>${tableRows}</tbody>
+                </table>
+            </div>
+        `;
+
+        document.getElementById('ndx-backtest-loading').style.display = 'none';
+        document.getElementById('ndx-backtest-content').style.display = 'block';
+        setStatus(`NDX Backtest loaded - ${data.accuracy}% accuracy`);
+    } catch (err) {
+        document.getElementById('ndx-backtest-loading').style.display = 'none';
+        document.getElementById('ndx-backtest-error').style.display = 'block';
+        document.getElementById('ndx-backtest-error').innerHTML = `<div class="error-msg">Error: ${err.message}</div>`;
+        setStatus('Error loading NDX backtest');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// END NDX DASHBOARD
+// ═══════════════════════════════════════════════════════════════════
 
 async function loadPortfolio() {
     switchTab('portfolio');
