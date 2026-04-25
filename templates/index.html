@@ -1349,7 +1349,7 @@
             <div class="exit-form-row">
                 <div class="exit-form-group">
                     <label>Underlying</label>
-                    <select id="contract-underlying">
+                    <select id="contract-underlying" onchange="loadOptions(this.value)">
                         <option value="SPX">SPX</option>
                         <option value="QQQ">QQQ</option>
                         <option value="NDX">NDX</option>
@@ -3446,17 +3446,24 @@ function togglePatternDetail(idx) {
 }
 
 // ===== SPX OPTIONS TAB =====
-async function loadOptions() {
+async function loadOptions(underlying) {
     switchTab('options');
+    // Default to whatever the dropdown currently shows, fallback SPX
+    if (!underlying) underlying = document.getElementById('contract-underlying')?.value || 'SPX';
+    const useNdx = (underlying === 'NDX' || underlying === 'QQQ');
+    const apiUrl  = useNdx ? '/api/options?index=NDX' : '/api/options';
+    const liveUrl = useNdx ? '/api/live?symbol=^NDX'  : '/api/live';
+    const label   = underlying; // SPX, NDX, or QQQ
+
     document.getElementById('options-loading').style.display = 'block';
-    document.getElementById('options-loading').innerHTML = '<div class="spinner"></div><div>Loading SPX options analysis...</div>';
+    document.getElementById('options-loading').innerHTML = '<div class="spinner"></div><div>Loading ' + label + ' options analysis...</div>';
     document.getElementById('options-content').style.display = 'none';
     document.getElementById('options-error').style.display = 'none';
-    setStatus('Fetching options data...');
+    setStatus('Fetching ' + label + ' options data...');
 
     try {
         // Fetch options data and live price in parallel
-        const [res, liveRes] = await Promise.all([fetch('/api/options'), fetch('/api/live')]);
+        const [res, liveRes] = await Promise.all([fetch(apiUrl), fetch(liveUrl)]);
         const d = await res.json();
         if (!d.success) throw new Error(d.error);
 
@@ -3592,9 +3599,9 @@ async function loadOptions() {
 
         document.getElementById('options-content').innerHTML = `
             <div class="signal-card" style="text-align:center;">
-                <div class="signal-date">SPX Options Dashboard — 0DTE to 30DTE</div>
+                <div class="signal-date">${label} Options Dashboard — 0DTE to 30DTE</div>
                 <div style="font-size:11px; color:#484f58; margin-bottom:8px;">Updated ${d.timestamp} | Source: ${d.data_source}</div>
-                <div class="signal-close"><span>SPX</span> ${d.live ? d.live.current.toLocaleString() : d.spot.toLocaleString()}</div>
+                <div class="signal-close"><span>${label}</span> ${d.live ? d.live.current.toLocaleString() : d.spot.toLocaleString()}</div>
                 ${optLiveHtml}
 
                 <div style="display:inline-block; margin:16px auto; padding:12px 28px; border-radius:12px; background:${ivBg}; border:2px solid ${ivColor};">
@@ -3754,12 +3761,12 @@ async function loadOptions() {
 
         document.getElementById('options-loading').style.display = 'none';
         document.getElementById('options-content').style.display = 'block';
-        setStatus('Options: IV Rank ' + d.iv_rank + ' (' + d.iv_label + ')');
+        setStatus(label + ' Options: IV Rank ' + d.iv_rank + ' (' + d.iv_label + ')');
     } catch (err) {
         document.getElementById('options-loading').style.display = 'none';
         document.getElementById('options-error').style.display = 'block';
         document.getElementById('options-error').innerHTML = '<div class="error-msg">Error: ' + err.message + '</div>';
-        setStatus('Error loading options');
+        setStatus('Error loading ' + label + ' options');
     }
 }
 
