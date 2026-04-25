@@ -101,10 +101,27 @@ def analyze_spx_options(index='SPX'):
     spot = float(close.iloc[-1])
     prev_close = float(close.iloc[-2])
 
+    # For NDX: QQQ is used for options chain (P/C, skew) but all price/vol
+    # calculations must use actual ^NDX data — QQQ trades at ~1/40th NDX scale.
+    if index == 'NDX':
+        try:
+            ndx_tk = yf.Ticker("^NDX")
+            ndx_hist = ndx_tk.history(period="6mo")
+            if not ndx_hist.empty:
+                ndx_hist.index = pd.to_datetime(ndx_hist.index, utc=True).tz_localize(None)
+                hist = ndx_hist[["Open", "High", "Low", "Close", "Volume"]]
+                close = hist["Close"]
+                high = hist["High"]
+                low = hist["Low"]
+                spot = float(close.iloc[-1])
+                prev_close = float(close.iloc[-2])
+        except Exception:
+            pass  # Fall back to QQQ scale if NDX fetch fails
+
     result = {
         "spot": round(spot, 2),
         "prev_close": round(prev_close, 2),
-        "data_source": data["symbol"],
+        "data_source": "^NDX (opts via QQQ)" if index == 'NDX' else data["symbol"],
         "index": index,
         "timestamp": datetime.now().strftime("%H:%M:%S"),
     }
@@ -234,14 +251,16 @@ def analyze_spx_options(index='SPX'):
 
     # --- Optimal Strike Selection ---
     # Suggest strikes for different strategies
-    atm = round(spot / 5) * 5  # Round to nearest 5
+    # NDX uses 25-point increments; SPX uses 5-point increments
+    sr = 25 if index == 'NDX' else 5
+    atm = round(spot / sr) * sr
 
     result["suggested_strikes"] = {
-        "atm": atm,
-        "otm_call_1": atm + round(em_1d / 5) * 5,  # ~1 SD OTM
-        "otm_put_1": atm - round(em_1d / 5) * 5,
-        "otm_call_2": atm + round(em_5d / 5) * 5,  # ~1 SD for weekly
-        "otm_put_2": atm - round(em_5d / 5) * 5,
+        "atm": int(atm),
+        "otm_call_1": int(atm + round(em_1d / sr) * sr),   # ~1 SD OTM call
+        "otm_put_1":  int(atm - round(em_1d / sr) * sr),   # ~1 SD OTM put
+        "otm_call_2": int(atm + round(em_5d / sr) * sr),   # ~1 SD weekly call
+        "otm_put_2":  int(atm - round(em_5d / sr) * sr),   # ~1 SD weekly put
     }
 
     # --- Greeks Snapshot for ATM options ---
