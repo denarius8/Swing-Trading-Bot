@@ -3794,7 +3794,7 @@ async function analyzeContract() {
                 + '<div style="font-size:11px; color:#3fb950;">+' + t.target_pct + '%</div>'
                 + '</div>'
                 + '<div>'
-                + '<div style="font-size:10px; color:#7d8590;">SPX Needs (Now)</div>'
+                + '<div style="font-size:10px; color:#7d8590;">' + d.underlying + ' Needs (Now)</div>'
                 + '<div style="font-size:20px; font-weight:700; color:#e6edf3;">' + t.spot_needed_now.toLocaleString() + '</div>'
                 + '<div style="font-size:11px; color:#484f58;">~' + Math.abs(t.spot_move_needed).toFixed(0) + ' pts move</div>'
                 + '</div>'
@@ -3804,7 +3804,7 @@ async function analyzeContract() {
                 + '<div style="font-size:11px; color:#484f58;">reach target now</div>'
                 + '</div>'
                 + '<div>'
-                + '<div style="font-size:10px; color:#7d8590;">SPX Needs (Expiry)</div>'
+                + '<div style="font-size:10px; color:#7d8590;">' + d.underlying + ' Needs (Expiry)</div>'
                 + '<div style="font-size:20px; font-weight:700; color:#e6edf3;">' + t.spot_needed_at_expiry.toLocaleString() + '</div>'
                 + '<div style="font-size:11px; color:#484f58;">at expiration</div>'
                 + '</div>'
@@ -3818,10 +3818,10 @@ async function analyzeContract() {
 
         document.getElementById('contract-result').innerHTML = `
             <div class="signal-card" style="text-align:center;">
-                <div class="signal-date">SPX ${d.strike} ${typeLabel} — ${d.expiration}</div>
+                <div class="signal-date">${d.underlying} ${d.strike} ${typeLabel} — ${d.expiration}</div>
                 <div style="font-size:11px; color:#484f58; margin-bottom:8px;">${d.dte} DTE | ${d.contracts} contract${d.contracts > 1 ? 's' : ''} | IV: ${d.implied_vol}% (${d.iv_source === 'live_chain' ? 'LIVE' : d.iv_source === 'current_price' ? 'from price' : 'from entry'}) | Hist Vol: ${d.hist_vol}% | Updated ${d.timestamp}</div>
                 <div style="font-size:14px; color:#e6edf3; margin-bottom:8px;">
-                    SPX Spot: <strong>${d.spot.toLocaleString()}</strong> | Entry: <strong>$${d.premium.toFixed(2)}</strong>${d.live_chain ? ' | Bid: <strong>$' + d.live_chain.bid.toFixed(2) + '</strong> Ask: <strong>$' + d.live_chain.ask.toFixed(2) + '</strong> Mid: <strong>$' + d.live_chain.mid_price.toFixed(2) + '</strong>' : (d.current_price ? ' | Market: <strong>$' + d.current_price.toFixed(2) + '</strong>' : '')} | Cost: <strong>$${d.total_cost.toLocaleString()}</strong>
+                    ${d.underlying} Spot: <strong>${d.spot.toLocaleString()}</strong> | Entry: <strong>$${d.premium.toFixed(2)}</strong>${d.live_chain ? ' | Bid: <strong>$' + d.live_chain.bid.toFixed(2) + '</strong> Ask: <strong>$' + d.live_chain.ask.toFixed(2) + '</strong> Mid: <strong>$' + d.live_chain.mid_price.toFixed(2) + '</strong>' : (d.current_price ? ' | Market: <strong>$' + d.current_price.toFixed(2) + '</strong>' : '')} | Cost: <strong>$${d.total_cost.toLocaleString()}</strong>
                 </div>
                 ${d.live_chain ? '<div style="font-size:11px; color:#484f58; margin-bottom:4px;">Last: $' + d.live_chain.last_price.toFixed(2) + ' | Vol: ' + d.live_chain.volume.toLocaleString() + ' | OI: ' + d.live_chain.open_interest.toLocaleString() + '</div>' : ''}
                 <div style="font-size:13px; margin-bottom:16px; color:${d.market_pnl >= 0 ? '#3fb950' : '#ff7b72'};">
@@ -3903,11 +3903,11 @@ async function analyzeContract() {
             </div>
 
             <div class="card" style="margin-top:16px;">
-                <div class="card-title">P&L Scenarios — Current Value at Different SPX Prices</div>
+                <div class="card-title">P&L Scenarios — Current Value at Different ${d.underlying} Prices</div>
                 <table style="width:100%; font-size:12px; color:#c9d1d9;">
                     <thead>
                         <tr style="color:#7d8590; font-size:10px; text-transform:uppercase; border-bottom:2px solid #21262d;">
-                            <th style="padding:8px 12px; text-align:left;">SPX Price</th>
+                            <th style="padding:8px 12px; text-align:left;">${d.underlying} Price</th>
                             <th style="padding:8px 12px;">Move</th>
                             <th style="padding:8px 12px;">Option Value</th>
                             <th style="padding:8px 12px;">Time Value</th>

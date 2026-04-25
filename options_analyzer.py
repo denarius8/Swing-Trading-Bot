@@ -403,14 +403,21 @@ def _implied_vol_from_premium(spot, strike, T, r, premium, option_type):
     return mid
 
 
-def _fetch_live_option_price(strike, expiration, option_type):
+def _fetch_live_option_price(strike, expiration, option_type, underlying='SPX'):
     """
-    Fetch the LIVE market price and IV for a specific SPX option from the options chain.
-    Returns (mid_price, market_iv, bid, ask, last_price, volume, open_interest) or None if unavailable.
+    Fetch the LIVE market price and IV for a specific option from the options chain.
+    Returns dict with mid_price, bid, ask, etc. or None if unavailable.
     """
     try:
         import yfinance as yf
-        ticker = yf.Ticker("^SPX")
+        # Choose the right options ticker
+        if underlying in ('NDX',):
+            sym = "^NDX"
+        elif underlying == 'QQQ':
+            sym = "QQQ"
+        else:
+            sym = "^SPX"
+        ticker = yf.Ticker(sym)
 
         # Check if expiration date is available
         available_dates = ticker.options
@@ -479,6 +486,14 @@ def analyze_contract(strike, expiration, option_type, premium, contracts=1, targ
     hist = data["hist"]
     close = hist["Close"]
 
+    # Pick the correct spot ticker
+    if underlying == 'NDX':
+        spot_ticker = "^NDX"
+    elif underlying == 'QQQ':
+        spot_ticker = "QQQ"
+    else:
+        spot_ticker = "^GSPC"
+
     # Get best available spot price
     if current_spx and current_spx > 0:
         # User override — most accurate during market hours
@@ -488,7 +503,7 @@ def analyze_contract(strike, expiration, option_type, premium, contracts=1, targ
         # Try intraday data first (more current than daily close)
         try:
             import yfinance as yf
-            intraday = yf.download("^GSPC", period="1d", interval="2m", progress=False)
+            intraday = yf.download(spot_ticker, period="1d", interval="2m", progress=False)
             if intraday is not None and len(intraday) > 0:
                 spot = float(intraday["Close"].iloc[-1])
                 spot_source = "intraday"
@@ -511,7 +526,7 @@ def analyze_contract(strike, expiration, option_type, premium, contracts=1, targ
     multiplier = 100  # SPX options multiplier
 
     # --- AUTO-FETCH live option price and IV from options chain ---
-    live_data = _fetch_live_option_price(strike, expiration, option_type)
+    live_data = _fetch_live_option_price(strike, expiration, option_type, underlying)
     iv_source = "entry_premium"  # Track where IV came from
 
     if live_data and live_data["mid_price"] > 0:
@@ -724,6 +739,7 @@ def analyze_contract(strike, expiration, option_type, premium, contracts=1, targ
         }
 
     return {
+        "underlying": underlying,
         "spot": round(spot, 2),
         "strike": strike,
         "option_type": option_type,
