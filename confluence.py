@@ -15,6 +15,7 @@ import pandas as pd
 import ta
 import yfinance as yf
 from datetime import datetime
+from net_premium import fetch_net_premium_signal
 
 
 # Default watchlist for scanner
@@ -27,7 +28,9 @@ DEFAULT_WATCHLIST = [
     "IWM", "DIA", "XLF", "XLE", "XLK", "GLD", "SLV", "TLT",
 ]
 
-CONFLUENCE_THRESHOLD = 7  # Need 7+ out of 10 for a signal
+CONFLUENCE_THRESHOLD = 8   # Need 8+ out of 12 for ENTER signal (67% bar)
+STAY_THRESHOLD       = 6   # 6-7/12 = STAY LONG/SHORT (trend intact, not fresh entry)
+LEAN_THRESHOLD       = 5   # 5/12 = LEAN (informational only)
 
 
 def _fetch_ticker_data(symbol, period="6mo"):
@@ -154,6 +157,22 @@ def _calculate_indicators(df):
     d["sma200"] = float(sma200.iloc[-1]) if not np.isnan(sma200.iloc[-1]) else price
     d["above_200sma"] = price > d["sma200"]
 
+    # 50 SMA for trend context
+    sma50 = close.rolling(50).mean()
+    d["sma50"] = float(sma50.iloc[-1]) if not np.isnan(sma50.iloc[-1]) else price
+    d["above_50sma"] = price > d["sma50"]
+
+    # Recovery detection — RSI was at extreme within last 15 bars, now recovering
+    rsi_window = rsi.iloc[-15:] if len(rsi) >= 15 else rsi
+    d["rsi_recovery_bullish"] = bool(rsi_window.min() < 32) and float(rsi.iloc[-1]) > 50
+    d["rsi_recovery_bearish"] = bool(rsi_window.max() > 68) and float(rsi.iloc[-1]) < 50
+
+    # Trend context flags (used by context-aware scoring)
+    d["confirmed_uptrend"]   = (d["above_200sma"] and d["above_50sma"]
+                                and d["adx_trending"] and d["adx_bull"])
+    d["confirmed_downtrend"] = (not d["above_200sma"] and not d["above_50sma"]
+                                and d["adx_trending"] and not d["adx_bull"])
+
     # Extra context
     d["change_1d"] = (price - d["prev_close"]) / d["prev_close"]
     ret_5d = close.pct_change(5)
@@ -184,14 +203,15 @@ def _get_vix():
     return None
 
 
-def _get_net_premium_data():
+def _get_net_premium_data(index='SPX'):
     """
     Read the last two net premium entries from cache.
     Returns (latest_np, prev_np, streak_direction) or (None, None, None).
     Does NOT trigger a live calculation — reads cache only (fast).
     """
     try:
-        cache_path = os.path.join("cache", "net_premium.json")
+        cache_file = "ndx_net_premium.json" if index == 'NDX' else "net_premium.json"
+        cache_path = os.path.join("cache", cache_file)
         if not os.path.exists(cache_path):
             return None, None, None
         with open(cache_path) as f:
@@ -483,29 +503,232 @@ def score_reversal(indicators, vix=None, net_premium_data=None):
     }
 
 
-def score_confluence(indicators):
+def get_fast_pullback_alert(indicators, vix=None, vix_prev=None, gex_signal=None, np_signal=None):
     """
-    Score 10 confluence indicators.
-    Returns: dict with scores (+1=long, -1=short, 0=neutral) per indicator,
-    total long/short scores, and final signal.
+    Fast Pullback Alert — fires at 4+ fear triggers before 8/12 confluence confirms.
+    Selloffs are faster than rallies; this catches them before full confirmation.
+
+    Symmetric: also detects fast breakout / capitulation bottom conditions.
+    Returns dict with triggers, count, and alert level.
+    """
+    triggers = {}
+    price  = indicators["price"]
+    sma50  = indicators.get("sma50", price)
+
+    # ── 1. VIX Spike (fear entering fast) ────────────────────────────
+    if vix is not None and vix_prev is not None and vix_prev > 0:
+        vix_chg = (vix - vix_prev) / vix_prev
+        if vix_chg >= 0.15:
+            triggers["vix_spike"] = {
+                "triggered": True, "direction": "bearish",
+                "label": f"VIX Spike +{vix_chg*100:.0f}%",
+                "detail": f"VIX: {vix_prev:.1f} → {vix:.1f} — fear entering market fast",
+            }
+        elif vix_chg <= -0.15:
+            triggers["vix_spike"] = {
+                "triggered": True, "direction": "bullish",
+                "label": f"VIX Collapse -{abs(vix_chg)*100:.0f}%",
+                "detail": f"VIX: {vix_prev:.1f} → {vix:.1f} — fear leaving market fast",
+            }
+        else:
+            triggers["vix_spike"] = {"triggered": False, "direction": "neutral",
+                                      "label": f"VIX Stable ({vix:.1f})", "detail": ""}
+    else:
+        triggers["vix_spike"] = {"triggered": False, "direction": "neutral",
+                                  "label": "VIX — Unavailable", "detail": ""}
+
+    # ── 2. EMA 9 crossed EMA 21 ───────────────────────────────────────
+    ema9  = indicators["ema9"]
+    ema21 = indicators["ema21"]
+    if indicators["ema_bear_stack"] and not indicators.get("prev_ema_bear", False):
+        triggers["ema_cross"] = {
+            "triggered": True, "direction": "bearish",
+            "label": "EMA 9 Crossed Below 21",
+            "detail": f"EMA9 ({ema9:.1f}) < EMA21 ({ema21:.1f}) — short-term momentum flip",
+        }
+    elif indicators["ema_bull_stack"] and not indicators.get("prev_ema_bull", False):
+        triggers["ema_cross"] = {
+            "triggered": True, "direction": "bullish",
+            "label": "EMA 9 Crossed Above 21",
+            "detail": f"EMA9 ({ema9:.1f}) > EMA21 ({ema21:.1f}) — short-term momentum flip",
+        }
+    else:
+        triggers["ema_cross"] = {"triggered": False, "direction": "neutral",
+                                  "label": f"EMA Stable (9:{ema9:.0f} / 21:{ema21:.0f})", "detail": ""}
+
+    # ── 3. Price broke above/below 50 SMA on volume ───────────────────
+    if indicators["vol_above_avg"]:
+        if price < sma50 and indicators.get("above_50sma_prev", True):
+            triggers["sma50_break"] = {
+                "triggered": True, "direction": "bearish",
+                "label": "Broke Below 50 SMA on Volume",
+                "detail": f"Price {price:.2f} < SMA50 {sma50:.2f} on {indicators['vol_ratio']:.1f}x avg vol",
+            }
+        elif price > sma50 and not indicators.get("above_50sma_prev", True):
+            triggers["sma50_break"] = {
+                "triggered": True, "direction": "bullish",
+                "label": "Reclaimed 50 SMA on Volume",
+                "detail": f"Price {price:.2f} > SMA50 {sma50:.2f} on {indicators['vol_ratio']:.1f}x avg vol",
+            }
+        else:
+            triggers["sma50_break"] = {"triggered": False, "direction": "neutral",
+                                        "label": f"50 SMA Stable ({sma50:.0f})", "detail": ""}
+    else:
+        triggers["sma50_break"] = {"triggered": False, "direction": "neutral",
+                                    "label": f"50 SMA — Low Volume", "detail": ""}
+
+    # ── 4. GEX Flip Event ─────────────────────────────────────────────
+    if gex_signal and gex_signal.get("flip_event"):
+        flip_dir = gex_signal.get("flip_direction", "")
+        direction = "bullish" if flip_dir == "LONG" else "bearish"
+        triggers["gex_flip"] = {
+            "triggered": True, "direction": direction,
+            "label": f"GEX Flip {flip_dir} ⚡",
+            "detail": f"Dealers flipped to {'LONG' if direction == 'bullish' else 'SHORT'} gamma — hedging mechanics reversed",
+        }
+    else:
+        gex_regime = gex_signal.get("regime", "UNKNOWN") if gex_signal else "UNKNOWN"
+        triggers["gex_flip"] = {"triggered": False, "direction": "neutral",
+                                 "label": f"No GEX Flip ({gex_regime})", "detail": ""}
+
+    # ── 5. Net Premium Flip ───────────────────────────────────────────
+    if np_signal and np_signal.get("flip_event"):
+        flip_dir = np_signal.get("flip_direction", "")
+        direction = "bullish" if flip_dir == "positive" else "bearish"
+        triggers["np_flip"] = {
+            "triggered": True, "direction": direction,
+            "label": f"Options Flow Flip {'↑' if direction == 'bullish' else '↓'}",
+            "detail": np_signal.get("detail", "Net premium changed direction"),
+        }
+    else:
+        triggers["np_flip"] = {"triggered": False, "direction": "neutral",
+                                "label": "No Flow Flip", "detail": ""}
+
+    # ── 6. Volume Climax (high volume day reversing) ──────────────────
+    vol_ratio = indicators["vol_ratio"]
+    chg1d     = indicators["change_1d"]
+    close_rng = indicators.get("close_range_pct", 0.5)
+    if vol_ratio > 1.5 and chg1d < -0.015 and close_rng < 0.3:
+        triggers["volume_climax"] = {
+            "triggered": True, "direction": "bearish",
+            "label": f"Bearish Volume Climax ({vol_ratio:.1f}x)",
+            "detail": f"{chg1d*100:.1f}% on {vol_ratio:.1f}x avg vol, closed weak — capitulation selling",
+        }
+    elif vol_ratio > 1.5 and chg1d > 0.015 and close_rng > 0.7:
+        triggers["volume_climax"] = {
+            "triggered": True, "direction": "bullish",
+            "label": f"Bullish Volume Climax ({vol_ratio:.1f}x)",
+            "detail": f"+{chg1d*100:.1f}% on {vol_ratio:.1f}x avg vol, closed strong — capitulation buying",
+        }
+    else:
+        triggers["volume_climax"] = {"triggered": False, "direction": "neutral",
+                                      "label": f"Volume Normal ({vol_ratio:.1f}x)", "detail": ""}
+
+    # ── Tally ─────────────────────────────────────────────────────────
+    active    = [t for t in triggers.values() if t["triggered"]]
+    bearish_n = sum(1 for t in active if t["direction"] == "bearish")
+    bullish_n = sum(1 for t in active if t["direction"] == "bullish")
+    total_n   = len(active)
+
+    ALERT_THRESHOLD = 3  # 3+ triggers = alert (fast moves don't always hit 4)
+
+    if bearish_n >= ALERT_THRESHOLD:
+        alert_level = "FAST PULLBACK ALERT"
+        alert_class = "fast-pullback"
+        alert_dir   = "bearish"
+    elif bullish_n >= ALERT_THRESHOLD:
+        alert_level = "FAST BREAKOUT ALERT"
+        alert_class = "fast-breakout"
+        alert_dir   = "bullish"
+    elif total_n >= 2:
+        dominant = "bearish" if bearish_n >= bullish_n else "bullish"
+        alert_level = f"{'PULLBACK' if dominant == 'bearish' else 'BREAKOUT'} WATCH"
+        alert_class = "pullback-watch"
+        alert_dir   = dominant
+    else:
+        alert_level = "NO ALERT"
+        alert_class = "no-alert"
+        alert_dir   = "neutral"
+
+    return {
+        "triggers":     triggers,
+        "alert_level":  alert_level,
+        "alert_class":  alert_class,
+        "alert_dir":    alert_dir,
+        "bearish_count": bearish_n,
+        "bullish_count": bullish_n,
+        "total_active": total_n,
+        "threshold":    ALERT_THRESHOLD,
+    }
+
+
+def score_confluence(indicators, gex_signal=None, np_signal=None):
+    """
+    Score 12 confluence indicators with context-aware trend mode.
+
+    Indicators 1-10: existing (with context-aware fixes for RSI, BB, Key Levels, Stochastic)
+    Indicator 11:    GEX Regime (long/short gamma)
+    Indicator 12:    Net Premium Flow (Day-1 flip + streak)
+
+    Threshold: 8+/12 = ENTER LONG/SHORT (67% bar)
+               6-7/12 = STAY LONG/SHORT (trend intact)
+               5/12   = LEAN (informational)
     """
     scores = {}
+    uptrend   = indicators.get("confirmed_uptrend",   False)
+    downtrend = indicators.get("confirmed_downtrend", False)
 
-    # 1. RSI Zone + Divergence
+    # ── 1. RSI — context-aware ────────────────────────────────────────
     rsi = indicators["rsi"]
-    if rsi < 30 or indicators["rsi_bull_divergence"]:
-        scores["rsi"] = {"score": 1, "label": "RSI Oversold / Bull Divergence",
-                         "detail": f"RSI: {rsi:.1f}" + (" + Bullish Divergence" if indicators["rsi_bull_divergence"] else ""),
-                         "reason": "RSI below 30 signals oversold bounce potential"}
-    elif rsi > 70 or indicators["rsi_bear_divergence"]:
-        scores["rsi"] = {"score": -1, "label": "RSI Overbought / Bear Divergence",
-                         "detail": f"RSI: {rsi:.1f}" + (" + Bearish Divergence" if indicators["rsi_bear_divergence"] else ""),
-                         "reason": "RSI above 70 signals overbought pullback risk"}
+    if uptrend:
+        # In confirmed uptrend: RSI 50+ = bullish momentum; RSI < 40 = pullback entry; bear div = caution
+        if rsi >= 50 and not indicators["rsi_bear_divergence"]:
+            scores["rsi"] = {"score": 1, "label": "RSI Bullish (Trend Mode)",
+                             "detail": f"RSI: {rsi:.1f} — above 50 in uptrend",
+                             "reason": "RSI 50+ in confirmed uptrend = momentum confirmation"}
+        elif rsi < 40 or indicators["rsi_bull_divergence"]:
+            scores["rsi"] = {"score": 1, "label": "RSI Pullback Entry",
+                             "detail": f"RSI: {rsi:.1f}" + (" + Bull Divergence" if indicators["rsi_bull_divergence"] else ""),
+                             "reason": "RSI pullback in uptrend = re-entry opportunity"}
+        elif indicators["rsi_bear_divergence"]:
+            scores["rsi"] = {"score": -1, "label": "RSI Bearish Divergence",
+                             "detail": f"RSI: {rsi:.1f} — diverging from price high",
+                             "reason": "Bearish divergence in uptrend — warning signal"}
+        else:
+            scores["rsi"] = {"score": 0, "label": "RSI Neutral (Trend Mode)",
+                             "detail": f"RSI: {rsi:.1f}", "reason": "RSI between 40-50 in uptrend"}
+    elif downtrend:
+        # In confirmed downtrend: RSI <= 50 = bearish; RSI > 60 = dead cat bounce
+        if rsi <= 50 and not indicators["rsi_bull_divergence"]:
+            scores["rsi"] = {"score": -1, "label": "RSI Bearish (Trend Mode)",
+                             "detail": f"RSI: {rsi:.1f} — below 50 in downtrend",
+                             "reason": "RSI below 50 in confirmed downtrend = momentum confirmation"}
+        elif rsi > 60 or indicators["rsi_bear_divergence"]:
+            scores["rsi"] = {"score": -1, "label": "RSI Dead Cat / Bear Div",
+                             "detail": f"RSI: {rsi:.1f}" + (" + Bear Divergence" if indicators["rsi_bear_divergence"] else ""),
+                             "reason": "RSI bounce in downtrend = short re-entry opportunity"}
+        elif indicators["rsi_bull_divergence"]:
+            scores["rsi"] = {"score": 1, "label": "RSI Bullish Divergence",
+                             "detail": f"RSI: {rsi:.1f} — diverging from price low",
+                             "reason": "Bullish divergence in downtrend — warning signal"}
+        else:
+            scores["rsi"] = {"score": 0, "label": "RSI Neutral (Trend Mode)",
+                             "detail": f"RSI: {rsi:.1f}", "reason": "RSI between 50-60 in downtrend"}
     else:
-        scores["rsi"] = {"score": 0, "label": "RSI Neutral",
-                         "detail": f"RSI: {rsi:.1f}", "reason": "RSI in neutral zone (30-70)"}
+        # Range-bound: traditional oversold/overbought
+        if rsi < 30 or indicators["rsi_bull_divergence"]:
+            scores["rsi"] = {"score": 1, "label": "RSI Oversold / Bull Divergence",
+                             "detail": f"RSI: {rsi:.1f}" + (" + Bullish Divergence" if indicators["rsi_bull_divergence"] else ""),
+                             "reason": "RSI below 30 signals oversold bounce potential"}
+        elif rsi > 70 or indicators["rsi_bear_divergence"]:
+            scores["rsi"] = {"score": -1, "label": "RSI Overbought / Bear Divergence",
+                             "detail": f"RSI: {rsi:.1f}" + (" + Bearish Divergence" if indicators["rsi_bear_divergence"] else ""),
+                             "reason": "RSI above 70 signals overbought pullback risk"}
+        else:
+            scores["rsi"] = {"score": 0, "label": "RSI Neutral",
+                             "detail": f"RSI: {rsi:.1f}", "reason": "RSI in neutral zone (30-70)"}
 
-    # 2. VWAP Reclaim/Rejection
+    # ── 2. VWAP ──────────────────────────────────────────────────────
     if indicators["price_vs_vwap"] > 0:
         scores["vwap"] = {"score": 1, "label": "Above VWAP",
                           "detail": f"Price {indicators['price']:.2f} > VWAP {indicators['vwap']:.2f}",
@@ -515,57 +738,86 @@ def score_confluence(indicators):
                           "detail": f"Price {indicators['price']:.2f} < VWAP {indicators['vwap']:.2f}",
                           "reason": "Price below VWAP = institutional selling bias"}
 
-    # 3. EMA Stack (9 > 21 > 50)
+    # ── 3. EMA Stack ─────────────────────────────────────────────────
     if indicators["ema_bull_stack"]:
         scores["ema_stack"] = {"score": 1, "label": "Bullish EMA Stack",
-                               "detail": f"EMA 9 ({indicators['ema9']:.1f}) > 21 ({indicators['ema21']:.1f}) > 50 ({indicators['ema50']:.1f})",
-                               "reason": "All short-term MAs aligned bullish = strong uptrend"}
+                               "detail": f"9 ({indicators['ema9']:.1f}) > 21 ({indicators['ema21']:.1f}) > 50 ({indicators['ema50']:.1f})",
+                               "reason": "All EMAs aligned bullish = strong uptrend"}
     elif indicators["ema_bear_stack"]:
         scores["ema_stack"] = {"score": -1, "label": "Bearish EMA Stack",
-                               "detail": f"EMA 9 ({indicators['ema9']:.1f}) < 21 ({indicators['ema21']:.1f}) < 50 ({indicators['ema50']:.1f})",
-                               "reason": "All short-term MAs aligned bearish = strong downtrend"}
+                               "detail": f"9 ({indicators['ema9']:.1f}) < 21 ({indicators['ema21']:.1f}) < 50 ({indicators['ema50']:.1f})",
+                               "reason": "All EMAs aligned bearish = strong downtrend"}
     else:
         scores["ema_stack"] = {"score": 0, "label": "EMAs Mixed",
                                "detail": "EMA 9/21/50 not fully aligned",
                                "reason": "Mixed EMAs = no clear directional trend"}
 
-    # 4. MACD Crossover + Histogram
+    # ── 4. MACD ───────────────────────────────────────────────────────
     if indicators["macd_hist"] > 0 and (indicators["macd_bull_cross"] or indicators["macd_hist_expanding"]):
         scores["macd"] = {"score": 1, "label": "MACD Bullish",
-                          "detail": f"Histogram: {indicators['macd_hist']:.2f}" + (" (Fresh Cross)" if indicators["macd_bull_cross"] else " (Expanding)"),
+                          "detail": f"Hist: {indicators['macd_hist']:.2f}" + (" (Cross)" if indicators["macd_bull_cross"] else " (Expanding)"),
                           "reason": "Bullish MACD crossover or expanding positive histogram"}
     elif indicators["macd_hist"] < 0 and (indicators["macd_bear_cross"] or indicators["macd_hist_expanding"]):
         scores["macd"] = {"score": -1, "label": "MACD Bearish",
-                          "detail": f"Histogram: {indicators['macd_hist']:.2f}" + (" (Fresh Cross)" if indicators["macd_bear_cross"] else " (Expanding)"),
+                          "detail": f"Hist: {indicators['macd_hist']:.2f}" + (" (Cross)" if indicators["macd_bear_cross"] else " (Expanding)"),
                           "reason": "Bearish MACD crossover or expanding negative histogram"}
     else:
         scores["macd"] = {"score": 0, "label": "MACD Neutral",
-                          "detail": f"Histogram: {indicators['macd_hist']:.2f}",
+                          "detail": f"Hist: {indicators['macd_hist']:.2f}",
                           "reason": "No fresh crossover or histogram not expanding"}
 
-    # 5. Bollinger Band Squeeze → Expansion
-    if indicators["bb_pct"] > 0.8 and indicators["bb_expanding"]:
-        scores["bollinger"] = {"score": 1, "label": "BB Upper Breakout",
-                               "detail": f"BB%: {indicators['bb_pct']:.1%} (Bands Expanding)",
-                               "reason": "Price breaking above upper band with expansion = momentum breakout"}
-    elif indicators["bb_pct"] < 0.2 and indicators["bb_expanding"]:
-        scores["bollinger"] = {"score": -1, "label": "BB Lower Breakdown",
-                               "detail": f"BB%: {indicators['bb_pct']:.1%} (Bands Expanding)",
-                               "reason": "Price breaking below lower band with expansion = momentum breakdown"}
-    elif indicators["bb_pct"] < 0.2 and not indicators["bb_expanding"]:
-        scores["bollinger"] = {"score": 1, "label": "BB Oversold Bounce",
-                               "detail": f"BB%: {indicators['bb_pct']:.1%} (Bands Tight)",
-                               "reason": "Price at lower band in squeeze = mean reversion bounce likely"}
-    elif indicators["bb_pct"] > 0.8 and not indicators["bb_expanding"]:
-        scores["bollinger"] = {"score": -1, "label": "BB Overbought Fade",
-                               "detail": f"BB%: {indicators['bb_pct']:.1%} (Bands Tight)",
-                               "reason": "Price at upper band in squeeze = mean reversion pullback likely"}
+    # ── 5. Bollinger Bands — context-aware ───────────────────────────
+    bb_pct      = indicators["bb_pct"]
+    bb_expand   = indicators["bb_expanding"]
+    if uptrend:
+        # Uptrend: riding upper band = momentum; lower band touch = pullback entry
+        if bb_pct > 0.75:
+            scores["bollinger"] = {"score": 1, "label": "Riding Upper Band (Trend)",
+                                   "detail": f"BB%: {bb_pct:.1%} — momentum continuation",
+                                   "reason": "Price at upper band in confirmed uptrend = strong momentum, not overbought"}
+        elif bb_pct < 0.25:
+            scores["bollinger"] = {"score": 1, "label": "Lower Band Pullback Entry",
+                                   "detail": f"BB%: {bb_pct:.1%} — pullback to lower band in uptrend",
+                                   "reason": "Price at lower band in uptrend = re-entry opportunity"}
+        else:
+            scores["bollinger"] = {"score": 0, "label": "BB Mid-Range (Trend)",
+                                   "detail": f"BB%: {bb_pct:.1%}", "reason": "Price in Bollinger mid-range during uptrend"}
+    elif downtrend:
+        # Downtrend: riding lower band = momentum; upper band touch = dead cat/short entry
+        if bb_pct < 0.25:
+            scores["bollinger"] = {"score": -1, "label": "Riding Lower Band (Trend)",
+                                   "detail": f"BB%: {bb_pct:.1%} — momentum breakdown",
+                                   "reason": "Price at lower band in confirmed downtrend = strong selling pressure"}
+        elif bb_pct > 0.75:
+            scores["bollinger"] = {"score": -1, "label": "Upper Band Dead Cat",
+                                   "detail": f"BB%: {bb_pct:.1%} — bounce to upper band in downtrend",
+                                   "reason": "Price at upper band in downtrend = short re-entry opportunity"}
+        else:
+            scores["bollinger"] = {"score": 0, "label": "BB Mid-Range (Trend)",
+                                   "detail": f"BB%: {bb_pct:.1%}", "reason": "Price in Bollinger mid-range during downtrend"}
     else:
-        scores["bollinger"] = {"score": 0, "label": "BB Neutral",
-                               "detail": f"BB%: {indicators['bb_pct']:.1%}",
-                               "reason": "Price in middle of Bollinger Bands"}
+        # Range: traditional mean-reversion logic
+        if bb_pct > 0.8 and bb_expand:
+            scores["bollinger"] = {"score": 1, "label": "BB Upper Breakout",
+                                   "detail": f"BB%: {bb_pct:.1%} (Expanding)",
+                                   "reason": "Price breaking above upper band with expansion = momentum breakout"}
+        elif bb_pct < 0.2 and bb_expand:
+            scores["bollinger"] = {"score": -1, "label": "BB Lower Breakdown",
+                                   "detail": f"BB%: {bb_pct:.1%} (Expanding)",
+                                   "reason": "Price breaking below lower band with expansion = momentum breakdown"}
+        elif bb_pct < 0.2:
+            scores["bollinger"] = {"score": 1, "label": "BB Oversold Bounce",
+                                   "detail": f"BB%: {bb_pct:.1%}",
+                                   "reason": "Price at lower band = mean reversion bounce likely"}
+        elif bb_pct > 0.8:
+            scores["bollinger"] = {"score": -1, "label": "BB Overbought Fade",
+                                   "detail": f"BB%: {bb_pct:.1%}",
+                                   "reason": "Price at upper band = mean reversion pullback likely"}
+        else:
+            scores["bollinger"] = {"score": 0, "label": "BB Neutral",
+                                   "detail": f"BB%: {bb_pct:.1%}", "reason": "Price in middle of Bollinger Bands"}
 
-    # 6. Volume Confirmation
+    # ── 6. Volume ─────────────────────────────────────────────────────
     if indicators["vol_above_avg"] and indicators["change_1d"] > 0:
         scores["volume"] = {"score": 1, "label": "High Volume Up",
                             "detail": f"Volume {indicators['vol_ratio']:.1f}x average",
@@ -579,21 +831,33 @@ def score_confluence(indicators):
                             "detail": f"Volume {indicators['vol_ratio']:.1f}x average",
                             "reason": "Volume near average = no clear conviction"}
 
-    # 7. Key Level Test
-    if indicators["near_20d_low"]:
-        scores["key_level"] = {"score": 1, "label": "Testing 20-Day Low (Support)",
-                               "detail": f"Near {indicators['low_20']:.2f}",
-                               "reason": "Price at key support level = bounce opportunity"}
-    elif indicators["near_20d_high"]:
-        scores["key_level"] = {"score": -1, "label": "Testing 20-Day High (Resistance)",
-                               "detail": f"Near {indicators['high_20']:.2f}",
-                               "reason": "Price at key resistance = rejection risk"}
+    # ── 7. Key Levels — context-aware ────────────────────────────────
+    near_high = indicators["near_20d_high"]
+    near_low  = indicators["near_20d_low"]
+    if near_high:
+        if uptrend:
+            scores["key_level"] = {"score": 1, "label": "Breakout to 20-Day High",
+                                   "detail": f"At/above {indicators['high_20']:.2f} in confirmed uptrend",
+                                   "reason": "New 20-day high in uptrend = breakout confirmation, not resistance"}
+        else:
+            scores["key_level"] = {"score": -1, "label": "Testing 20-Day Resistance",
+                                   "detail": f"Near {indicators['high_20']:.2f}",
+                                   "reason": "Price at key resistance = rejection risk"}
+    elif near_low:
+        if downtrend:
+            scores["key_level"] = {"score": -1, "label": "Breakdown to 20-Day Low",
+                                   "detail": f"At/below {indicators['low_20']:.2f} in confirmed downtrend",
+                                   "reason": "New 20-day low in downtrend = breakdown confirmation, not support"}
+        else:
+            scores["key_level"] = {"score": 1, "label": "Testing 20-Day Support",
+                                   "detail": f"Near {indicators['low_20']:.2f}",
+                                   "reason": "Price at key support level = bounce opportunity"}
     else:
         scores["key_level"] = {"score": 0, "label": "Mid-Range",
-                               "detail": f"Range: {indicators['low_20']:.2f} - {indicators['high_20']:.2f}",
+                               "detail": f"{indicators['low_20']:.2f} – {indicators['high_20']:.2f}",
                                "reason": "Price not testing any key level"}
 
-    # 8. ADX Trend Strength
+    # ── 8. ADX ───────────────────────────────────────────────────────
     if indicators["adx_trending"] and indicators["adx_bull"]:
         scores["adx"] = {"score": 1, "label": "Strong Bullish Trend",
                          "detail": f"ADX: {indicators['adx']:.1f} (+DI > -DI)",
@@ -607,21 +871,51 @@ def score_confluence(indicators):
                          "detail": f"ADX: {indicators['adx']:.1f}",
                          "reason": "ADX < 25 = no strong trend in either direction"}
 
-    # 9. Stochastic Crossover in Extreme Zones
-    if indicators["stoch_bull_cross"] or (indicators["stoch_k"] < 20):
-        scores["stochastic"] = {"score": 1, "label": "Stochastic Oversold",
-                                "detail": f"%K: {indicators['stoch_k']:.1f} / %D: {indicators['stoch_d']:.1f}",
-                                "reason": "Stochastic in oversold zone = bounce signal"}
-    elif indicators["stoch_bear_cross"] or (indicators["stoch_k"] > 80):
-        scores["stochastic"] = {"score": -1, "label": "Stochastic Overbought",
-                                "detail": f"%K: {indicators['stoch_k']:.1f} / %D: {indicators['stoch_d']:.1f}",
-                                "reason": "Stochastic in overbought zone = pullback signal"}
+    # ── 9. Stochastic — context-aware ────────────────────────────────
+    sk = indicators["stoch_k"]
+    sd = indicators["stoch_d"]
+    if uptrend:
+        # Uptrend: K<30 = pullback re-entry (+1); K>80 = neutral (0, momentum in trend)
+        if sk < 30:
+            scores["stochastic"] = {"score": 1, "label": "Stochastic Pullback Entry (Trend)",
+                                    "detail": f"%K: {sk:.1f} / %D: {sd:.1f} — oversold in uptrend",
+                                    "reason": "Stochastic pullback in uptrend = re-entry opportunity, not reversal"}
+        elif sk > 80:
+            scores["stochastic"] = {"score": 0, "label": "Stochastic High — Trend Momentum",
+                                    "detail": f"%K: {sk:.1f} / %D: {sd:.1f} — elevated in uptrend",
+                                    "reason": "High stochastic in uptrend = momentum, not overbought signal"}
+        else:
+            scores["stochastic"] = {"score": 0, "label": "Stochastic Neutral (Trend)",
+                                    "detail": f"%K: {sk:.1f} / %D: {sd:.1f}", "reason": "Stochastic in mid-range during uptrend"}
+    elif downtrend:
+        # Downtrend: K>70 = dead cat re-entry (-1); K<20 = neutral (0, momentum in trend)
+        if sk > 70:
+            scores["stochastic"] = {"score": -1, "label": "Stochastic Dead Cat (Trend)",
+                                    "detail": f"%K: {sk:.1f} / %D: {sd:.1f} — overbought in downtrend",
+                                    "reason": "High stochastic in downtrend = dead cat bounce, short re-entry"}
+        elif sk < 20:
+            scores["stochastic"] = {"score": 0, "label": "Stochastic Low — Trend Momentum",
+                                    "detail": f"%K: {sk:.1f} / %D: {sd:.1f} — low in downtrend",
+                                    "reason": "Low stochastic in downtrend = momentum, oversold can get worse"}
+        else:
+            scores["stochastic"] = {"score": 0, "label": "Stochastic Neutral (Trend)",
+                                    "detail": f"%K: {sk:.1f} / %D: {sd:.1f}", "reason": "Stochastic in mid-range during downtrend"}
     else:
-        scores["stochastic"] = {"score": 0, "label": "Stochastic Neutral",
-                                "detail": f"%K: {indicators['stoch_k']:.1f} / %D: {indicators['stoch_d']:.1f}",
-                                "reason": "Stochastic in neutral zone"}
+        # Range-bound: traditional crossover logic
+        if indicators["stoch_bull_cross"] or sk < 20:
+            scores["stochastic"] = {"score": 1, "label": "Stochastic Oversold",
+                                    "detail": f"%K: {sk:.1f} / %D: {sd:.1f}",
+                                    "reason": "Stochastic in oversold zone = bounce signal"}
+        elif indicators["stoch_bear_cross"] or sk > 80:
+            scores["stochastic"] = {"score": -1, "label": "Stochastic Overbought",
+                                    "detail": f"%K: {sk:.1f} / %D: {sd:.1f}",
+                                    "reason": "Stochastic in overbought zone = pullback signal"}
+        else:
+            scores["stochastic"] = {"score": 0, "label": "Stochastic Neutral",
+                                    "detail": f"%K: {sk:.1f} / %D: {sd:.1f}",
+                                    "reason": "Stochastic in neutral zone"}
 
-    # 10. Price vs 200 SMA (Big Picture Trend)
+    # ── 10. 200 SMA ──────────────────────────────────────────────────
     if indicators["above_200sma"]:
         scores["trend_200"] = {"score": 1, "label": "Above 200 SMA",
                                "detail": f"Price {indicators['price']:.2f} > SMA200 {indicators['sma200']:.2f}",
@@ -631,33 +925,111 @@ def score_confluence(indicators):
                                "detail": f"Price {indicators['price']:.2f} < SMA200 {indicators['sma200']:.2f}",
                                "reason": "Below 200-day MA = long-term downtrend"}
 
-    # Calculate totals
-    long_count = sum(1 for s in scores.values() if s["score"] == 1)
-    short_count = sum(1 for s in scores.values() if s["score"] == -1)
+    # ── 11. GEX Regime ────────────────────────────────────────────────
+    if gex_signal and gex_signal.get("signal") != 0:
+        g = gex_signal
+        regime = g.get("regime", "UNKNOWN")
+        flip_tag = ""
+        if g.get("flip_event"):
+            flip_dir = g.get("flip_direction", "")
+            flip_tag = f" — ⚡ GEX FLIP {flip_dir}!"
+        if g.get("signal") == 1:
+            scores["gex_regime"] = {
+                "score": 1,
+                "label": f"Long Gamma{flip_tag}",
+                "detail": (f"Total GEX: {g.get('total_gex', 0):,.0f} | "
+                           f"Flip level: {g.get('flip_level', 'N/A')} | Spot {'above' if g.get('above_flip') else 'below'} flip"),
+                "reason": "Dealers are long gamma — they buy dips and sell rips, supporting upward drift",
+            }
+        else:
+            scores["gex_regime"] = {
+                "score": -1,
+                "label": f"Short Gamma{flip_tag}",
+                "detail": (f"Total GEX: {g.get('total_gex', 0):,.0f} | "
+                           f"Flip level: {g.get('flip_level', 'N/A')} | Spot {'above' if g.get('above_flip') else 'below'} flip"),
+                "reason": "Dealers are short gamma — they sell weakness and buy strength, amplifying moves",
+            }
+    else:
+        scores["gex_regime"] = {
+            "score": 0,
+            "label": "GEX — No Data",
+            "detail": "Load GEX tab to populate dealer gamma data",
+            "reason": "GEX data unavailable — cannot assess dealer positioning",
+        }
+
+    # ── 12. Net Premium Flow ─────────────────────────────────────────
+    if np_signal and np_signal.get("signal") != 0:
+        n = np_signal
+        tier_labels = {"flip": "⚡ FLOW FLIP", "conviction": "CONVICTION", "sustained": "SUSTAINED", "early": ""}
+        tier_tag = tier_labels.get(n.get("tier", ""), "")
+        scores["net_premium_flow"] = {
+            "score": n["signal"],
+            "label": f"Net Premium {'+' if n['signal'] > 0 else '-'} {'Bullish' if n['signal'] > 0 else 'Bearish'}{' — ' + tier_tag if tier_tag else ''}",
+            "detail": n.get("detail", n.get("label", "")),
+            "reason": ("Positive net premium = call flow dominant — institutional money is long"
+                       if n["signal"] > 0 else
+                       "Negative net premium = put flow dominant — institutional money is hedging/short"),
+        }
+    else:
+        scores["net_premium_flow"] = {
+            "score": 0,
+            "label": "Net Premium — Neutral / No Data",
+            "detail": "Load Confluence → Net Premium section to populate",
+            "reason": "No sustained net premium signal",
+        }
+
+    # ── Totals & Signal State ─────────────────────────────────────────
+    long_count    = sum(1 for s in scores.values() if s["score"] == 1)
+    short_count   = sum(1 for s in scores.values() if s["score"] == -1)
     neutral_count = sum(1 for s in scores.values() if s["score"] == 0)
+    total_indicators = len(scores)
+
+    # Recovery signals (fire as advisory even below threshold)
+    recovery_bullish = indicators.get("rsi_recovery_bullish", False)
+    recovery_bearish = indicators.get("rsi_recovery_bearish", False)
 
     if long_count >= CONFLUENCE_THRESHOLD:
-        signal = "ENTER LONG"
+        signal       = "ENTER LONG"
         signal_class = "enter-long"
-        strength = long_count
+        strength     = long_count
     elif short_count >= CONFLUENCE_THRESHOLD:
-        signal = "ENTER SHORT"
+        signal       = "ENTER SHORT"
         signal_class = "enter-short"
-        strength = short_count
+        strength     = short_count
+    elif long_count >= STAY_THRESHOLD and long_count > short_count + 1:
+        signal       = "STAY LONG"
+        signal_class = "stay-long"
+        strength     = long_count
+    elif short_count >= STAY_THRESHOLD and short_count > long_count + 1:
+        signal       = "STAY SHORT"
+        signal_class = "stay-short"
+        strength     = short_count
+    elif long_count >= LEAN_THRESHOLD and long_count > short_count:
+        signal       = "LEAN LONG"
+        signal_class = "lean-bull"
+        strength     = long_count
+    elif short_count >= LEAN_THRESHOLD and short_count > long_count:
+        signal       = "LEAN SHORT"
+        signal_class = "lean-bear"
+        strength     = short_count
     else:
-        signal = "NO SIGNAL"
+        signal       = "NO SIGNAL"
         signal_class = "no-signal"
-        strength = max(long_count, short_count)
+        strength     = max(long_count, short_count)
 
     return {
-        "scores": scores,
-        "long_count": long_count,
-        "short_count": short_count,
-        "neutral_count": neutral_count,
-        "signal": signal,
-        "signal_class": signal_class,
-        "strength": strength,
-        "threshold": CONFLUENCE_THRESHOLD,
+        "scores":            scores,
+        "long_count":        long_count,
+        "short_count":       short_count,
+        "neutral_count":     neutral_count,
+        "signal":            signal,
+        "signal_class":      signal_class,
+        "strength":          strength,
+        "threshold":         CONFLUENCE_THRESHOLD,
+        "total_indicators":  total_indicators,
+        "trend_context":     ("UPTREND" if uptrend else "DOWNTREND" if downtrend else "RANGE"),
+        "recovery_bullish":  recovery_bullish,
+        "recovery_bearish":  recovery_bearish,
     }
 
 
@@ -958,8 +1330,8 @@ def analyze_exit(symbol, position_type, entry_price):
 
 def analyze_ticker(symbol, include_reversal=False):
     """Full confluence analysis for a single ticker.
-    Pass include_reversal=True to also run the reversal entry panel
-    (fetches VIX + reads NP cache — adds ~1s for SPX).
+    Automatically includes GEX regime and net premium flow in the 12-indicator system.
+    Pass include_reversal=True to also run the reversal entry panel.
     """
     df = _fetch_ticker_data(symbol)
     if df is None or len(df) < 50:
@@ -967,20 +1339,48 @@ def analyze_ticker(symbol, include_reversal=False):
 
     try:
         indicators = _calculate_indicators(df)
-        result = score_confluence(indicators)
-        result["symbol"] = symbol
-        result["price"] = indicators["price"]
+
+        # Fetch GEX signal (cached, fast)
+        gex_sig = None
+        try:
+            from gex import get_gex_signal
+            # Use NDX GEX for NDX symbols, SPX for everything else
+            gex_index = 'NDX' if symbol in ('^NDX', 'QQQ') else 'SPX'
+            gex_sig = get_gex_signal(index=gex_index)
+        except Exception:
+            pass
+
+        # Read net premium signal from cache (no live fetch)
+        np_sig = None
+        try:
+            np_index = 'NDX' if symbol in ('^NDX', 'QQQ') else 'SPX'
+            np_sig = fetch_net_premium_signal(index=np_index)
+        except Exception:
+            pass
+
+        result = score_confluence(indicators, gex_signal=gex_sig, np_signal=np_sig)
+        result["symbol"]    = symbol
+        result["price"]     = indicators["price"]
         result["change_1d"] = round(indicators["change_1d"] * 100, 2)
         result["change_5d"] = round(indicators["change_5d"] * 100, 2)
-        result["rsi"] = round(indicators["rsi"], 1)
-        result["adx"] = round(indicators["adx"], 1)
+        result["rsi"]       = round(indicators["rsi"], 1)
+        result["adx"]       = round(indicators["adx"], 1)
         result["vol_ratio"] = round(indicators["vol_ratio"], 2)
         result["timestamp"] = datetime.now().strftime("%H:%M:%S")
+        result["gex_signal"] = gex_sig
+        result["np_signal"]  = np_sig
 
         if include_reversal:
-            vix = _get_vix()
+            vix    = _get_vix()
             np_data = _get_net_premium_data()
             result["reversal"] = score_reversal(indicators, vix=vix, net_premium_data=np_data)
+
+            # Fast pullback alert
+            try:
+                result["fast_pullback"] = get_fast_pullback_alert(
+                    indicators, vix=vix, gex_signal=gex_sig, np_signal=np_sig)
+            except Exception:
+                result["fast_pullback"] = None
 
         return result
     except Exception:

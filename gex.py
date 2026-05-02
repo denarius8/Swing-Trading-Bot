@@ -12,6 +12,8 @@ Data is delayed ~15-20 min via Yahoo Finance.
 """
 
 import math
+import os
+import json
 import warnings
 from datetime import datetime, timedelta
 
@@ -438,3 +440,75 @@ def _calculate_gex(ticker, spot, expirations, now):
         "data_source": "SPX (^SPX)" if "SPX" in str(expirations) else "yfinance",
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
+
+
+def get_gex_signal(index='SPX'):
+    """
+    Return a lightweight GEX signal for the confluence system.
+    Caches the result for 30 minutes to avoid full options chain re-fetch.
+
+    Returns dict with:
+      signal      : +1 (long gamma / bullish), -1 (short gamma / bearish), 0 (unavailable)
+      regime      : 'LONG GAMMA' | 'SHORT GAMMA'
+      total_gex   : total net GEX value
+      flip_level  : price where dealers flip gamma
+      above_flip  : bool — is spot above the flip level?
+      flip_event  : bool — did the regime change since last check?
+      flip_direction : 'LONG' | 'SHORT' | None
+    """
+    cache_path = os.path.join("cache", f"gex_signal_{index.lower()}.json")
+
+    # Return cached result if fresh (< 30 min)
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path) as f:
+                cached = json.load(f)
+            fetched = datetime.fromisoformat(cached.get("fetched_at", "2000-01-01"))
+            age_min = (datetime.now() - fetched).total_seconds() / 60
+            if age_min < 30:
+                return cached
+            prev_regime = cached.get("regime")
+        except Exception:
+            prev_regime = None
+    else:
+        prev_regime = None
+
+    # Fetch fresh GEX data
+    try:
+        gex = fetch_gex_data(index=index)
+        total_gex  = gex["total_gex"]
+        flip_level = gex.get("gex_flip")
+        spot       = gex["spot"]
+
+        regime = "LONG GAMMA" if total_gex > 0 else "SHORT GAMMA"
+        signal = 1 if total_gex > 0 else -1
+
+        above_flip = (spot > flip_level) if flip_level else None
+
+        # Detect regime flip vs last cached state
+        flip_event     = False
+        flip_direction = None
+        if prev_regime and prev_regime != regime:
+            flip_event     = True
+            flip_direction = "LONG" if regime == "LONG GAMMA" else "SHORT"
+
+        result = {
+            "signal":         signal,
+            "regime":         regime,
+            "total_gex":      total_gex,
+            "flip_level":     flip_level,
+            "spot":           spot,
+            "above_flip":     above_flip,
+            "flip_event":     flip_event,
+            "flip_direction": flip_direction,
+            "fetched_at":     datetime.now().isoformat(),
+        }
+
+        os.makedirs("cache", exist_ok=True)
+        with open(cache_path, "w") as f:
+            json.dump(result, f)
+
+        return result
+    except Exception:
+        return {"signal": 0, "regime": "UNKNOWN", "flip_event": False, "flip_direction": None,
+                "total_gex": 0, "flip_level": None, "above_flip": None}

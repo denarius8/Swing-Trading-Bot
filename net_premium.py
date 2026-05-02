@@ -298,49 +298,112 @@ def get_premium_table(days=20, index='SPX'):
 
 def fetch_net_premium_signal(index='SPX'):
     """
-    Return a signal for the confidence system based on net premium streak.
-    4+ consecutive positive → bullish (+1)
-    4+ consecutive negative → bearish (-1)
-    Otherwise → neutral (0)
-    """
-    table = get_premium_table(days=10, index=index)
-    streak = table["streak"]
-    direction = table["streak_direction"]
+    Enhanced net premium signal with Day-1 flip detection.
 
-    if streak >= 4 and direction == "positive":
-        signal = 1
-        label = f"{streak} days positive net premium"
-        detail = "Sustained bullish options flow — buying pressure likely"
-    elif streak >= 4 and direction == "negative":
-        signal = -1
-        label = f"{streak} days negative net premium"
-        detail = "Sustained bearish options flow — selling pressure likely"
-    elif streak >= 2 and direction == "positive":
-        signal = 0
-        label = f"{streak} days positive (building)"
-        detail = "Bullish flow emerging but not yet sustained (need 4+ days)"
-    elif streak >= 2 and direction == "negative":
-        signal = 0
-        label = f"{streak} days negative (building)"
-        detail = "Bearish flow emerging but not yet sustained (need 4+ days)"
+    Signal fires IMMEDIATELY on the day flow flips direction — no 4-day wait.
+    Streak tiers add context but are not required for a signal.
+
+    Returns:
+      signal    : +1 (bullish), -1 (bearish), 0 (neutral/no data)
+      tier      : 'flip' | 'conviction' (7+d) | 'sustained' (3+d) | 'early' (1-2d) | 'neutral'
+      flip_event: bool — did flow flip direction vs prior day?
+    """
+    table   = get_premium_table(days=10, index=index)
+    streak  = table["streak"]
+    direction = table["streak_direction"]
+    history = table["history"]
+
+    latest = history[0] if history else None
+    prev   = history[1] if len(history) >= 2 else None
+
+    latest_np = latest["net_premium"] if latest else None
+    prev_np   = prev["net_premium"]   if prev   else None
+
+    # ── Day-1 flip detection ──────────────────────────────────────────
+    flip_event     = False
+    flip_direction = None
+    if latest_np is not None and prev_np is not None:
+        if latest_np > 0 and prev_np < 0:
+            flip_event     = True
+            flip_direction = "positive"
+        elif latest_np < 0 and prev_np > 0:
+            flip_event     = True
+            flip_direction = "negative"
+
+    # ── Signal & tier ─────────────────────────────────────────────────
+    if latest_np is None:
+        signal  = 0
+        label   = "Net Premium — No Data"
+        detail  = "Load Confluence → Net Premium section to populate"
+        tier    = "none"
+
+    elif flip_event and flip_direction == "positive":
+        signal  = 1
+        label   = "Flow Flip Bullish ↑"
+        detail  = (f"Net premium turned positive "
+                   f"(${prev_np/1e9:.2f}B → ${latest_np/1e9:.2f}B) — immediate bullish signal")
+        tier    = "flip"
+
+    elif flip_event and flip_direction == "negative":
+        signal  = -1
+        label   = "Flow Flip Bearish ↓"
+        detail  = (f"Net premium turned negative "
+                   f"(${prev_np/1e9:.2f}B → ${latest_np/1e9:.2f}B) — immediate bearish signal")
+        tier    = "flip"
+
+    elif direction == "positive":
+        np_b = latest_np / 1e9
+        if streak >= 7:
+            signal = 1
+            label  = f"Flow Conviction Bullish ({streak} days)"
+            detail = f"${np_b:.2f}B — 7+ day sustained positive flow"
+            tier   = "conviction"
+        elif streak >= 3:
+            signal = 1
+            label  = f"Flow Sustained Bullish ({streak} days)"
+            detail = f"${np_b:.2f}B — multi-day positive flow"
+            tier   = "sustained"
+        else:
+            signal = 1
+            label  = f"Flow Positive ({streak} day{'s' if streak > 1 else ''})"
+            detail = f"${np_b:.2f}B — positive options flow"
+            tier   = "early"
+
+    elif direction == "negative":
+        np_b = latest_np / 1e9
+        if streak >= 7:
+            signal = -1
+            label  = f"Flow Conviction Bearish ({streak} days)"
+            detail = f"${np_b:.2f}B — 7+ day sustained negative flow"
+            tier   = "conviction"
+        elif streak >= 3:
+            signal = -1
+            label  = f"Flow Sustained Bearish ({streak} days)"
+            detail = f"${np_b:.2f}B — multi-day negative flow"
+            tier   = "sustained"
+        else:
+            signal = -1
+            label  = f"Flow Negative ({streak} day{'s' if streak > 1 else ''})"
+            detail = f"${np_b:.2f}B — negative options flow"
+            tier   = "early"
+
     else:
         signal = 0
-        label = "No clear premium trend"
-        detail = "Net premium direction is mixed — no sustained flow signal"
-
-    # Get latest values for display
-    latest = table["history"][0] if table["history"] else None
-    net_prem = latest["net_premium"] if latest else None
-    source = latest.get("source", "auto") if latest else "none"
+        label  = "Flow Neutral"
+        detail = "Net premium direction is mixed — no clear sustained flow"
+        tier   = "neutral"
 
     return {
-        "signal": signal,
-        "label": label,
-        "detail": detail,
-        "streak": streak,
-        "streak_direction": direction,
-        "latest_net_premium": net_prem,
-        "latest_source": source,
+        "signal":              signal,
+        "label":               label,
+        "detail":              detail,
+        "streak":              streak,
+        "streak_direction":    direction,
+        "flip_event":          flip_event,
+        "flip_direction":      flip_direction,
+        "tier":                tier,
+        "latest_net_premium":  latest_np,
+        "latest_source":       latest.get("source", "auto") if latest else "none",
     }
 
 
