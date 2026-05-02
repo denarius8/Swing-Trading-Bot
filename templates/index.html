@@ -2896,8 +2896,11 @@ async function loadConfluence() {
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
 
-        const signalColor = data.signal === 'ENTER LONG' ? '#3fb950' :
-                           data.signal === 'ENTER SHORT' ? '#ff7b72' : '#7d8590';
+        const signalColor = data.signal === 'ENTER LONG'  ? '#3fb950' :
+                           data.signal === 'ENTER SHORT' ? '#ff7b72' :
+                           data.signal === 'STAY LONG'   ? '#56d364' :
+                           data.signal === 'STAY SHORT'  ? '#f47067' :
+                           (data.signal === 'LEAN LONG' || data.signal === 'LEAN SHORT') ? '#d29922' : '#7d8590';
 
         // Build indicator checklist
         let indicatorRows = '';
@@ -2914,9 +2917,10 @@ async function loadConfluence() {
                 + '</div>';
         });
 
-        // Build confluence meter dots
+        // Build confluence meter dots (12 indicators)
+        const totalDots = data.total_indicators || 12;
         let meterDots = '';
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < totalDots; i++) {
             if (i < data.long_count) {
                 meterDots += '<div class="confluence-dot long">&#x2191;</div>';
             } else if (i < data.long_count + data.neutral_count) {
@@ -2924,6 +2928,47 @@ async function loadConfluence() {
             } else {
                 meterDots += '<div class="confluence-dot short">&#x2193;</div>';
             }
+        }
+
+        // Build flip event badges (GEX flip + Net Premium flip)
+        let flipBadges = '';
+        if (data.gex_signal && data.gex_signal.flip_event) {
+            const gexDir = data.gex_signal.flip_direction === 'LONG' ? 'gex-flip-long' : 'gex-flip-short';
+            const gexLabel = data.gex_signal.flip_direction === 'LONG' ? '⚡ GEX FLIP LONG' : '⚡ GEX FLIP SHORT';
+            flipBadges += '<span class="flip-badge ' + gexDir + '">' + gexLabel + '</span>';
+        }
+        if (data.np_signal && data.np_signal.flip_event) {
+            const npDir = data.np_signal.flip_direction === 'positive' ? 'flow-flip-bull' : 'flow-flip-bear';
+            const npLabel = data.np_signal.flip_direction === 'positive' ? '⚡ FLOW FLIP ↑' : '⚡ FLOW FLIP ↓';
+            flipBadges += '<span class="flip-badge ' + npDir + '">' + npLabel + '</span>';
+        }
+
+        // Build fast pullback/breakout alert
+        let fastAlertHtml = '';
+        if (data.fast_pullback && data.fast_pullback.alert_class !== 'no-alert') {
+            const fp = data.fast_pullback;
+            const triggerList = Object.values(fp.triggers || {})
+                .filter(t => t.triggered)
+                .map(t => '<span style="font-size:10px; color:' + (t.direction === 'bearish' ? '#f47067' : t.direction === 'bullish' ? '#3fb950' : '#7d8590') + '; margin:0 4px;">' + t.label + '</span>')
+                .join('');
+            fastAlertHtml = '<div style="margin:8px 0;">'
+                + '<div class="fast-pullback-alert ' + fp.alert_class + '">'
+                + '🚨 ' + fp.alert_level + ' &nbsp;(' + (fp.alert_dir === 'bearish' ? fp.bearish_count : fp.bullish_count) + '/' + fp.threshold + ' triggers)'
+                + '</div>'
+                + (triggerList ? '<div style="margin:4px 0;">' + triggerList + '</div>' : '')
+                + '</div>';
+        }
+
+        // Trend context badge
+        const tcLower = (data.trend_context || 'range').toLowerCase();
+        const tcBadge = '<span class="trend-context-badge ' + tcLower + '">' + (data.trend_context || 'RANGE') + '</span>';
+
+        // Recovery advisory
+        let recoveryHtml = '';
+        if (data.recovery_bullish) {
+            recoveryHtml = '<div class="recovery-advisory">📈 RSI recovered from oversold — potential trend restart signal</div>';
+        } else if (data.recovery_bearish) {
+            recoveryHtml = '<div class="recovery-advisory" style="border-color:#da3633; color:#ff7b72; background:#2a1111;">📉 RSI recovered from overbought — potential trend reversal</div>';
         }
 
         // Build live session bar if available
