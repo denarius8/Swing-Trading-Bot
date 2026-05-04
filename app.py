@@ -230,6 +230,11 @@ def api_backtest():
         raw_df = fetch_index_data(ticker_sym, cache_name)
         df = prepare_data(raw_df)
 
+        # Defensive: fill any missing trained features with 0
+        for col in feature_cols:
+            if col not in df.columns:
+                df[col] = 0.0
+
         n_days = 30
         recent = df.iloc[-n_days:]
         X = recent[feature_cols].values

@@ -289,6 +289,11 @@ def predict_trend(index='SPX'):
     df = add_all_features(raw_df)
     df = df.dropna()
 
+    # Defensive: fill any missing trained features with 0
+    for col in feature_cols:
+        if col not in df.columns:
+            df[col] = 0.0
+
     latest = df.iloc[-1]
 
     # --- ML probability ---
@@ -368,6 +373,12 @@ def predict_next_day(index='SPX'):
     raw_df = fetch_index_data(ticker, cache_name, force_refresh=True)
     df = add_all_features(raw_df)
     df = df.dropna()
+
+    # Defensive: if any trained features are missing (e.g. cross-asset fetch failed),
+    # fill with 0 so the prediction still runs (degrades gracefully without xa_ signals)
+    for col in feature_cols:
+        if col not in df.columns:
+            df[col] = 0.0
 
     # Use the most recent row as input
     latest = df.iloc[-1]
